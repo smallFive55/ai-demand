@@ -1,7 +1,5 @@
 # ============ Cursor / IDE ============
-# 审计日志（含用户邮箱、会话 ID、对话路径等敏感信息）
 .cursor/hooks/audit.log
-# 对话转录记录
 agent-transcripts/
 *.jsonl
 
@@ -30,7 +28,7 @@ _bmad/
 secrets/
 *.key
 
-# ============ 前端构建 ============
+# ============ 依赖与构建 ============
 node_modules/
 dist/
 *.tsbuildinfo

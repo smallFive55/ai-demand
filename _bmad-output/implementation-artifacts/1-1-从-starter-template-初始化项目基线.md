@@ -1,6 +1,6 @@
 # Story 1.1: 从 Starter Template 初始化项目基线
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -112,19 +112,119 @@ so that 团队可以在统一工程基线下继续实现后续治理与业务能
 
 ### Agent Model Used
 
-GPT-5.3 Codex
+Claude claude-4.6-opus (Implementation)
 
 ### Debug Log References
 
 - Web research: NestJS v11 + Node 22 compatibility
 - Web research: Redis 8 release notes and patch stability
+- TypeScript 6 deprecation: `baseUrl` requires `ignoreDeprecations: "6.0"`
+- Jest config: JSON format avoids ts-node dependency; tsconfig needs `types: ["node", "jest"]`
+- ESLint flat config in CJS project: rename to `.mjs` extension
+
+### Implementation Plan
+
+1. 将现有单体 Vue 应用重构为 pnpm monorepo
+2. 使用 `git mv` 保留文件历史，将 `src/` 等移入 `apps/web/`
+3. 创建 NestJS 11 后端 `apps/api/` 含 health endpoint
+4. 建立 `packages/contracts`、`shared-types`、`eslint-config` 共享包
+5. 配置根级 workspace 脚本并验证 lint/test/build 全链路
 
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created
 - Story is implementation-ready with architecture guardrails and anti-regression guidance
+- 从单体 Vue SPA 成功重构为 pnpm monorepo（6 个工作区项目）
+- 现有前端代码通过 git mv 完整迁移至 apps/web/，保留 git 历史
+- NestJS 11 后端 apps/api/ 已搭建，含 /api/health 端点及统一 response envelope
+- packages/contracts 提供前后端共享 API 契约类型（ApiEnvelope, HealthResponse, PaginatedResponse）
+- packages/shared-types 提供业务领域类型占位（EventName 类型约定）
+- packages/eslint-config 提供可复用的 ESLint 基础配置
+- 根级 `pnpm test`、`pnpm lint`、`pnpm build` 全部通过，无回归
+- Web: 1 test file / 2 tests passed (Vitest)；API: 1 test file / 1 test passed (Jest)
+- 前端预建 features/admin 与 shared 目录
+- 后端预建 modules/admin、modules/auth、modules/requirements、config、infra 目录
+- Code review 修复：注册全局 response interceptor 与 exception filter，health 响应统一为 envelope
+- Code review 修复：CORS 从全开放改为基于 `CORS_ORIGIN` 的白名单配置（默认 `http://localhost:5173`）
+- Code review 修复：前端 auth token 与 localStorage 持久化打通，避免 API 鉴权头缺失
+- Code review 修复：补齐 API e2e 依赖 `supertest`/`@types/supertest` 并增加统一 envelope 断言
 
 ### File List
 
-- `_bmad-output/implementation-artifacts/1-1-从-starter-template-初始化项目基线.md`
+- `pnpm-workspace.yaml` — 新增：pnpm 工作区配置
+- `package.json` — 修改：根工作区脚本与 pnpm 配置
+- `package-lock.json` — 删除：迁移到 pnpm 后移除 npm lockfile
+- `pnpm-lock.yaml` — 新增：pnpm 锁文件
+- `tsconfig.json` — 修改：根级 TypeScript 基线配置
+- `.env.example` — 修改：增加后端环境变量
+- `.gitignore` — 修改：适配 monorepo
+- `README.md` — 修改：monorepo 文档与 API 规约
+- `apps/web/package.json` — 新增：前端包配置
+- `apps/web/tsconfig.json` — 移动：解决方案级 TS 配置
+- `apps/web/tsconfig.app.json` — 移动：Vue 应用 TS 配置
+- `apps/web/tsconfig.node.json` — 移动：工具链 TS 配置
+- `apps/web/vite.config.ts` — 移动：Vite 配置
+- `apps/web/vitest.config.ts` — 移动：Vitest 配置
+- `apps/web/eslint.config.js` — 移动：Vue ESLint 配置
+- `apps/web/index.html` — 移动：入口 HTML
+- `apps/web/env.d.ts` — 移动：环境类型声明
+- `apps/web/src/**` — 移动：全部前端源码（组件、路由、Store、视图等）
+- `apps/web/tests/setup.ts` — 移动：测试 setup
+- `apps/api/package.json` — 新增：后端包配置
+- `apps/api/tsconfig.json` — 新增：NestJS TS 配置
+- `apps/api/tsconfig.build.json` — 新增：构建专用 TS 配置
+- `apps/api/nest-cli.json` — 新增：Nest CLI 配置
+- `apps/api/jest.config.json` — 新增：Jest 配置
+- `apps/api/eslint.config.mjs` — 新增：API ESLint 配置
+- `apps/api/.env.example` — 新增：后端环境变量样例
+- `apps/api/src/main.ts` — 新增：NestJS 入口
+- `apps/api/src/app.module.ts` — 新增：根模块
+- `apps/api/src/app.controller.ts` — 新增：根控制器（/health）
+- `apps/api/src/app.service.ts` — 新增：根服务
+- `apps/api/src/app.controller.spec.ts` — 新增：控制器单元测试
+- `apps/api/src/common/interceptors/response.interceptor.ts` — 新增：统一响应拦截器
+- `apps/api/src/common/filters/http-exception.filter.ts` — 新增：全局异常过滤器
+- `apps/api/src/modules/admin/.gitkeep` — 新增：管理模块占位
+- `apps/api/src/modules/auth/.gitkeep` — 新增：认证模块占位
+- `apps/api/src/modules/requirements/.gitkeep` — 新增：需求模块占位
+- `apps/api/src/config/.gitkeep` — 新增：配置模块占位
+- `apps/api/src/infra/.gitkeep` — 新增：基础设施模块占位
+- `apps/api/test/app.e2e-spec.ts` — 新增：E2E 测试
+- `apps/api/test/jest-e2e.json` — 新增：E2E Jest 配置
+- `packages/contracts/package.json` — 新增：契约包配置
+- `packages/contracts/tsconfig.json` — 新增：契约包 TS 配置
+- `packages/contracts/src/index.ts` — 新增：API 契约类型定义
+- `packages/shared-types/package.json` — 新增：共享类型包配置
+- `packages/shared-types/tsconfig.json` — 新增：共享类型 TS 配置
+- `packages/shared-types/src/index.ts` — 新增：业务领域类型
+- `packages/eslint-config/package.json` — 新增：ESLint 配置包
+- `packages/eslint-config/index.js` — 新增：共享 ESLint 基础配置
+- `apps/web/src/features/admin/.gitkeep` — 新增：前端管理特性目录
+- `apps/web/src/shared/.gitkeep` — 新增：前端共享目录
+- `infra/.gitkeep` — 新增：基础设施目录占位
+- `tests/.gitkeep` — 新增：集成测试目录占位
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — 修改：状态更新
+- `_bmad-output/implementation-artifacts/1-1-从-starter-template-初始化项目基线.md` — 修改：故事状态与记录
 
+### Senior Developer Review (AI)
+
+- Reviewer: Peng (AI)
+- Review Date: 2026-04-08
+- Outcome: Changes Requested → Fixed in same review cycle
+- High Issues Fixed:
+  - 全局响应 envelope 实际未生效（已在 `main.ts` 注册 interceptor/filter）
+  - 鉴权 token 读取与持久化断链（已在 `auth` store 增加 localStorage 同步）
+- Medium Issues Fixed:
+  - CORS 全开放配置风险（已收敛为 `CORS_ORIGIN` 白名单）
+  - Story File List 与实际变更不一致（补充 lockfile 变更并移除无 git 证据项）
+  - e2e 未覆盖统一 envelope（已在 `app.e2e-spec.ts` 增加 envelope 断言）
+- Validation:
+  - `pnpm lint` ✅
+  - `pnpm test` ✅
+  - `pnpm --filter @ai-demand/api run test:e2e` ✅
+  - `pnpm build` ✅
+
+## Change Log
+
+- 2026-04-08: 完成 Story 1.1 全部任务 — 从单体 Vue 应用重构为 pnpm monorepo，新增 NestJS 11 后端、共享包结构、根级质量门脚本
+- 2026-04-08: 完成 code-review 修复项 — 统一响应中间件注册、CORS 收敛、auth token 持久化、e2e 契约断言与依赖补齐

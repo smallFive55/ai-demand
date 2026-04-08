@@ -1,0 +1,16 @@
+{
+  "name": "@ai-demand/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "lint": "echo contracts: no lint configured yet",
+    "test": "echo contracts: no tests yet"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2"
+  }
+}
