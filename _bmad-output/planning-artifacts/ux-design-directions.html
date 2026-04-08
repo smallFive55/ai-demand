@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>设计方向探索 — 需求全流程管理系统</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+    .toolbar { position: sticky; top: 0; z-index: 10; background: rgba(15,23,42,0.95); backdrop-filter: blur(8px); padding: 0.75rem 1rem; border-bottom: 1px solid #334155; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+    .toolbar span { font-size: 0.75rem; color: #94a3b8; margin-right: 0.5rem; }
+    .toolbar a {
+      font-size: 0.8rem; color: #93c5fd; text-decoration: none; padding: 0.35rem 0.65rem; border-radius: 6px; border: 1px solid #334155; background: #1e293b;
+    }
+    .toolbar a:hover { background: #334155; }
+    section { padding: 2rem 1rem 3rem; max-width: 1100px; margin: 0 auto; }
+    h1 { font-size: 1.1rem; margin: 0 0 0.25rem; color: #f8fafc; }
+    .sub { font-size: 0.8rem; color: #94a3b8; margin-bottom: 1.5rem; }
+    h2 { font-size: 0.95rem; color: #cbd5e1; margin: 0 0 1rem; }
+    .mock {
+      border-radius: 12px; overflow: hidden; border: 1px solid #334155; background: #1e293b;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+    }
+    .mock .chrome { height: 10px; background: #334155; display: flex; align-items: center; padding: 0 8px; gap: 4px; }
+    .mock .chrome i { width: 8px; height: 8px; border-radius: 50%; background: #64748b; }
+    .row { display: flex; min-height: 220px; }
+    .nav { width: 56px; background: #0f172a; padding: 8px 6px; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+    .nav b { width: 32px; height: 32px; border-radius: 8px; background: #2563eb; font-size: 10px; display: flex; align-items: center; justify-content: center; color: #fff; }
+    .nav .i { width: 28px; height: 6px; border-radius: 3px; background: #334155; }
+    .main { flex: 1; display: flex; flex-direction: column; background: #f8fafc; color: #0f172a; }
+    .top { height: 44px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; padding: 0 12px; justify-content: space-between; font-size: 12px; }
+    .top .btn { background: #2563eb; color: #fff; padding: 6px 12px; border-radius: 6px; font-weight: 600; }
+    .body { flex: 1; padding: 12px; display: flex; gap: 10px; }
+    .card { flex: 1; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; font-size: 11px; }
+    .card h3 { margin: 0 0 8px; font-size: 12px; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; background: #fef3c7; color: #b45309; }
+    .chat { max-width: 420px; margin: 0 auto; padding: 16px; background: #f8fafc; color: #0f172a; min-height: 200px; }
+    .bubble { background: #fff; border: 1px solid #e2e8f0; padding: 10px 12px; border-radius: 12px 12px 12px 4px; font-size: 12px; margin-bottom: 8px; }
+    .bubble.user { background: #dbeafe; border-color: #93c5fd; border-radius: 12px 12px 4px 12px; margin-left: 40px; }
+    .split { display: flex; gap: 0; min-height: 200px; }
+    .doc { flex: 1; background: #fff; padding: 12px; font-size: 11px; color: #334155; }
+    .side { width: 160px; background: #f1f5f9; border-left: 1px solid #e2e8f0; padding: 10px; font-size: 10px; }
+    .side button { width: 100%; margin-bottom: 6px; padding: 8px; border: none; border-radius: 6px; font-weight: 600; cursor: default; }
+    .side .p { background: #16a34a; color: #fff; }
+    .side .s { background: #fff; border: 1px solid #e2e8f0; }
+    .tag { font-size: 0.7rem; color: #64748b; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <span>跳转方向：</span>
+    <a href="#d1">A 经典侧栏</a>
+    <a href="#d2">B 顶栏主导航</a>
+    <a href="#d3">C 高密度看板</a>
+    <a href="#d4">D 审批右栏</a>
+    <a href="#d5">E 深顶浅内容</a>
+    <a href="#d6">F 窄栏对话</a>
+  </div>
+
+  <section id="d1">
+    <h1>方向 A — 左侧固定导航 + 顶栏（推荐基线）</h1>
+    <p class="sub">与规格中「Chosen Direction」主方案一致：侧栏 + 顶栏「提交需求」主按钮。</p>
+    <h2>线框示意</h2>
+    <div class="mock">
+      <div class="chrome"><i></i><i></i><i></i></div>
+      <div class="row">
+        <div class="nav"><b>需</b><div class="i"></div><div class="i"></div><div class="i"></div></div>
+        <div class="main">
+          <div class="top"><span>工作台</span><span class="btn">提交需求</span></div>
+          <div class="body">
+            <div class="card"><h3>我的需求</h3><span class="pill">待评审</span><br/><br/>需求标题示例…</div>
+            <div class="card"><h3>待办</h3>2 项需处理</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="tag">适用：交付经理与业务方通用工作台。</p>
+  </section>
+
+  <section id="d2">
+    <h1>方向 B — 顶栏 Tab 主导航（无侧栏）</h1>
+    <p class="sub">更偏「工具型」单任务聚焦；模块少时可减少认知负担。</p>
+    <div class="mock">
+      <div class="chrome"><i></i><i></i><i></i></div>
+      <div class="main" style="min-height:200px">
+        <div class="top"><span>需求 · 任务 · 设置</span><span class="btn">提交需求</span></div>
+        <div class="body" style="display:block"><div class="card" style="max-width:100%"><h3>列表</h3>全宽表格占位…</div></div>
+      </div>
+    </div>
+    <p class="tag">适用：角色功能极简时；多角色并存时慎用。</p>
+  </section>
+
+  <section id="d3">
+    <h1>方向 C — 高密度看板</h1>
+    <p class="sub">列多、卡片小；适合交付经理同时盯多条需求。</p>
+    <div class="mock">
+      <div class="chrome"><i></i><i></i><i></i></div>
+      <div class="row">
+        <div class="nav"><b>看</b></div>
+        <div class="main">
+          <div class="top"><span>看板</span><span class="btn">提交需求</span></div>
+          <div class="body" style="gap:6px">
+            <div class="card" style="flex:0 0 28%"><h3>待审查</h3>3</div>
+            <div class="card" style="flex:0 0 28%"><h3>开发中</h3>5</div>
+            <div class="card" style="flex:0 0 28%"><h3>待验收</h3>1</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="tag">与「井然有序」情绪一致；注意移动端列折叠为 Tab。</p>
+  </section>
+
+  <section id="d4">
+    <h1>方向 D — PRD 预览 + 右侧审批条</h1>
+    <p class="sub">双轨审批一屏完成；与规格中采纳方向一致。</p>
+    <div class="mock">
+      <div class="chrome"><i></i><i></i><i></i></div>
+      <div class="split">
+        <div class="doc"><strong>PRD 标题</strong><br/><br/>1. 背景… 2. 目标… 3. 功能…</div>
+        <div class="side">
+          <div style="font-weight:600;margin-bottom:8px">审查</div>
+          <button class="p" type="button">通过</button>
+          <button class="s" type="button">修改意见</button>
+        </div>
+      </div>
+    </div>
+    <p class="tag">移动端：审批条沉底固定。</p>
+  </section>
+
+  <section id="d5">
+    <h1>方向 E — 深色顶栏 + 浅色内容区</h1>
+    <p class="sub">强调「企业控制台」感；与浅色卡片对比更强。</p>
+    <div class="mock">
+      <div class="chrome"><i></i><i></i><i></i></div>
+      <div class="row">
+        <div class="nav" style="background:#1e293b"><b style="background:#6366f1">需</b></div>
+        <div class="main">
+          <div class="top" style="background:#1e293b;color:#e2e8f0;border-color:#334155"><span>控制台</span><span class="btn">提交需求</span></div>
+          <div class="body"><div class="card"><h3>概览</h3>指标占位</div></div>
+        </div>
+      </div>
+    </div>
+    <p class="tag">注意深色顶栏与 WCAG 对比；按钮保持高对比。</p>
+  </section>
+
+  <section id="d6">
+    <h1>方向 F — 居中窄栏对话（IM 心智）</h1>
+    <p class="sub">与规格「对话式提交」一致；减少表单感。</p>
+    <div class="mock">
+      <div class="chrome"><i></i><i></i><i></i></div>
+      <div class="main" style="min-height:220px;justify-content:center">
+        <div class="top"><span>新需求</span><span></span></div>
+        <div class="chat">
+          <div class="bubble">你好，请描述你的需求。</div>
+          <div class="bubble user">希望在移动端增加导出报表…</div>
+          <div class="bubble">收到。预期上线时间是？</div>
+        </div>
+      </div>
+    </div>
+    <p class="tag">max-width 约 640px；大屏两侧留白。</p>
+  </section>
+</body>
+</html>

@@ -1,0 +1,48 @@
+# ============ Cursor / IDE ============
+# 审计日志（含用户邮箱、会话 ID、对话路径等敏感信息）
+.cursor/hooks/audit.log
+# 对话转录记录
+agent-transcripts/
+*.jsonl
+
+# ============ 操作系统 ============
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+
+# ============ 编辑器 / 临时文件 ============
+*.log
+*.tmp
+*.temp
+.cache/
+temp_data/
+_bmad/
+.cursor/commands/
+
+# ============ 环境与密钥 ============
+.env
+.env.local
+.env.*.local
+*.pem
+secrets/
+*.key
+
+# ============ 前端构建 ============
+node_modules/
+dist/
+*.tsbuildinfo
+
+# ============ 测试 & 覆盖率 ============
+coverage/
+
+# ============ 通用忽略 ============
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build/
+*.egg-info/
+.eggs/

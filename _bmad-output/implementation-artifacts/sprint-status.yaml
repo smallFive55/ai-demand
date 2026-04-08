@@ -1,0 +1,74 @@
+# generated: 2026-04-07
+# project: ai-demand
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: D:/code/ai-demand/_bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-04-07
+project: ai-demand
+project_key: NOKEY
+tracking_system: file-system
+story_location: D:/code/ai-demand/_bmad-output/implementation-artifacts
+
+development_status:
+  epic-1: in-progress
+  1-1-从-starter-template-初始化项目基线: ready-for-dev
+  1-2-管理员管理账号生命周期: backlog
+  1-3-管理员配置角色与权限矩阵: backlog
+  1-4-管理员配置业务板块准入规则: backlog
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-业务方对话式提交需求: backlog
+  2-2-ai-项目识别与准入判断: backlog
+  2-3-放弃路径与通知闭环: backlog
+  2-4-接待成功通知交付经理: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-自动生成-prd-与原型: backlog
+  3-2-交付经理审查与版本控制: backlog
+  3-3-业务方评审与回流机制: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-ai-任务拆分与审批: backlog
+  4-2-ai-团队组建与架构设计审批: backlog
+  4-3-交付成果检查与调整回流: backlog
+  4-4-业务验收与退回处理: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-验收后自动触发上线跟进: backlog
+  5-2-上线成果录入与完善: backlog
+  5-3-自动复盘生成与通知分发: backlog
+  epic-5-retrospective: optional

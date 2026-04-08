@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>需求全流程管理系统 — 色彩与语义 Token</title>
+  <style>
+    :root {
+      font-family: system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --bg: #f8fafc;
+      --card: #fff;
+      --text: #0f172a;
+      --muted: #64748b;
+    }
+    body { margin: 0; background: var(--bg); color: var(--text); line-height: 1.5; }
+    header { padding: 1.5rem 2rem; background: #0f172a; color: #f8fafc; }
+    h1 { margin: 0; font-size: 1.25rem; }
+    p { margin: 0.35rem 0 0; color: #94a3b8; font-size: 0.9rem; }
+    main { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+    section { margin-bottom: 2rem; }
+    h2 { font-size: 1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.5rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1rem; }
+    .swatch {
+      border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0;
+      background: var(--card); box-shadow: 0 1px 2px rgba(15,23,42,0.06);
+    }
+    .swatch .color { height: 72px; }
+    .swatch .meta { padding: 0.5rem 0.65rem; font-size: 0.75rem; color: var(--muted); }
+    .swatch .meta strong { display: block; color: var(--text); font-size: 0.8rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; background: var(--card); border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; }
+    th, td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid #e2e8f0; }
+    th { background: #f1f5f9; font-weight: 600; }
+    tr:last-child td { border-bottom: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>UX 色彩与语义（Tailwind theme 映射参考）</h1>
+    <p>需求全流程管理系统 · 与 ux-design-specification.md 中 Visual Foundation 一致</p>
+  </header>
+  <main>
+    <section>
+      <h2>品牌与界面基础</h2>
+      <div class="grid">
+        <div class="swatch"><div class="color" style="background:#2563eb"></div><div class="meta"><strong>primary</strong>#2563eb</div></div>
+        <div class="swatch"><div class="color" style="background:#4f46e5"></div><div class="meta"><strong>primary-alt</strong>#4f46e5</div></div>
+        <div class="swatch"><div class="color" style="background:#f8fafc;border-bottom:1px solid #e2e8f0"></div><div class="meta"><strong>surface</strong>#f8fafc</div></div>
+        <div class="swatch"><div class="color" style="background:#ffffff;border-bottom:1px solid #e2e8f0"></div><div class="meta"><strong>surface-raised</strong>#ffffff</div></div>
+        <div class="swatch"><div class="color" style="background:#0f172a"></div><div class="meta"><strong>text-primary</strong>#0f172a</div></div>
+        <div class="swatch"><div class="color" style="background:#64748b"></div><div class="meta"><strong>text-muted</strong>#64748b</div></div>
+        <div class="swatch"><div class="color" style="background:#e2e8f0"></div><div class="meta"><strong>border</strong>#e2e8f0</div></div>
+      </div>
+    </section>
+    <section>
+      <h2>语义色</h2>
+      <div class="grid">
+        <div class="swatch"><div class="color" style="background:#16a34a"></div><div class="meta"><strong>success</strong>#16a34a</div></div>
+        <div class="swatch"><div class="color" style="background:#d97706"></div><div class="meta"><strong>warning</strong>#d97706</div></div>
+        <div class="swatch"><div class="color" style="background:#dc2626"></div><div class="meta"><strong>danger</strong>#dc2626</div></div>
+        <div class="swatch"><div class="color" style="background:#0284c7"></div><div class="meta"><strong>info</strong>#0284c7</div></div>
+      </div>
+    </section>
+    <section>
+      <h2>需求状态 → 色彩（与规格文档一致）</h2>
+      <table>
+        <thead><tr><th>状态</th><th>色彩语义</th><th>提示</th></tr></thead>
+        <tbody>
+          <tr><td>对话收集中</td><td>蓝（进行中）</td><td>配合图标「消息」</td></tr>
+          <tr><td>已接待</td><td>靛蓝（已确认）</td><td>与「已受理」文案一致</td></tr>
+          <tr><td>待审查/评审/审批</td><td>琥珀/橙</td><td>待办高亮</td></tr>
+          <tr><td>开发中/AI 执行中</td><td>蓝</td><td>可与 primary 同系不同阶</td></tr>
+          <tr><td>待验收</td><td>紫</td><td>与「通过」绿色区分</td></tr>
+          <tr><td>已验收/已复盘</td><td>绿</td><td>成功闭环</td></tr>
+          <tr><td>已放弃</td><td>灰</td><td>终止态弱化</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>需求全流程闭环交付系统</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#4f46e5',   // 靛蓝主色，体现专业与AI科技感
+            primaryHover: '#4338ca',
+            success: '#16a34a',   // 绿 - 已验收/通过
+            warning: '#f59e0b',   // 琥珀 - 待审批/需关注
+            danger: '#dc2626',    // 红 - 驳回/失败
+            info: '#0284c7',      // 蓝 - 提示/信息
+          },
+          fontFamily: {
+            sans: ['system-ui', '"Segoe UI"', '"PingFang SC"', '"Microsoft YaHei"', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* 自定义滚动条体现精致感 */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    [x-cloak] { display: none !important; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans h-screen overflow-hidden flex" x-data="{ currentTab: 'dashboard', chatStep: 1 }">
+
+  <!-- ================= 左侧导航 (Sidebar) ================= -->
+  <aside class="w-64 bg-slate-900 text-slate-300 flex flex-col transition-all duration-300 z-20 shadow-xl hidden md:flex">
+    <!-- Logo 区域 -->
+    <div class="h-16 flex items-center px-6 border-b border-slate-800 bg-slate-900/50">
+      <div class="w-8 h-8 rounded bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center text-white font-bold text-lg shadow-lg">
+        <i class="fa-solid fa-sparkles text-sm"></i>
+      </div>
+      <span class="ml-3 text-white font-semibold tracking-wide">AI 交付中枢</span>
+    </div>
+    
+    <!-- 菜单 -->
+    <nav class="flex-1 px-4 py-6 space-y-2">
+      <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-2">主工作区</div>
+      
+      <a href="#" @click.prevent="currentTab = 'dashboard'" 
+         :class="currentTab === 'dashboard' ? 'bg-primary text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'"
+         class="flex items-center px-3 py-2.5 rounded-lg transition-colors group">
+        <i class="fa-solid fa-layer-group w-5 text-center" :class="currentTab === 'dashboard' ? 'text-white' : 'text-slate-400 group-hover:text-white'"></i>
+        <span class="ml-3 text-sm font-medium">工作台看板</span>
+      </a>
+
+      <a href="#" @click.prevent="currentTab = 'submit'; chatStep = 1" 
+         :class="currentTab === 'submit' ? 'bg-primary text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'"
+         class="flex items-center px-3 py-2.5 rounded-lg transition-colors group">
+        <i class="fa-solid fa-comment-dots w-5 text-center" :class="currentTab === 'submit' ? 'text-white' : 'text-slate-400 group-hover:text-white'"></i>
+        <span class="ml-3 text-sm font-medium">发起需求</span>
+      </a>
+
+      <a href="#" @click.prevent="currentTab = 'review'" 
+         :class="currentTab === 'review' ? 'bg-primary text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'"
+         class="flex items-center px-3 py-2.5 rounded-lg transition-colors group justify-between">
+        <div class="flex items-center">
+          <i class="fa-solid fa-clipboard-check w-5 text-center" :class="currentTab === 'review' ? 'text-white' : 'text-slate-400 group-hover:text-white'"></i>
+          <span class="ml-3 text-sm font-medium">审批待办</span>
+        </div>
+        <span class="bg-warning text-white text-[10px] px-2 py-0.5 rounded-full font-bold">2</span>
+      </a>
+      
+      <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-8 mb-2 px-2">资产与治理</div>
+      <a href="#" class="flex items-center px-3 py-2.5 rounded-lg hover:bg-slate-800 hover:text-white transition-colors group">
+        <i class="fa-solid fa-box-archive w-5 text-center text-slate-400 group-hover:text-white"></i>
+        <span class="ml-3 text-sm font-medium">交付资产库</span>
+      </a>
+      <a href="#" class="flex items-center px-3 py-2.5 rounded-lg hover:bg-slate-800 hover:text-white transition-colors group">
+        <i class="fa-solid fa-chart-line w-5 text-center text-slate-400 group-hover:text-white"></i>
+        <span class="ml-3 text-sm font-medium">复盘分析</span>
+      </a>
+    </nav>
+
+    <!-- 底部用户信息 -->
+    <div class="p-4 border-t border-slate-800">
+      <div class="flex items-center">
+        <img src="https://ui-avatars.com/api/?name=Peng&background=e2e8f0&color=475569" alt="User" class="w-9 h-9 rounded-full border border-slate-700">
+        <div class="ml-3">
+          <p class="text-sm font-medium text-white">Peng (产品部)</p>
+          <p class="text-xs text-slate-500">端到端交付负责人</p>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ================= 主内容区 ================= -->
+  <div class="flex-1 flex flex-col h-screen overflow-hidden relative">
+    
+    <!-- 顶栏 (Header) -->
+    <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shadow-sm z-10 flex-shrink-0">
+      <div class="flex items-center">
+        <!-- 面包屑响应式 -->
+        <h1 class="text-lg font-semibold text-slate-800 flex items-center">
+          <span x-show="currentTab === 'dashboard'">👋 早上好，这里是一切井然有序的工作台</span>
+          <span x-show="currentTab === 'submit'">✨ 与 AI 对话式生成需求方案</span>
+          <span x-show="currentTab === 'review'" class="flex items-center">
+            <button @click="currentTab = 'dashboard'" class="text-slate-400 hover:text-primary mr-2 transition"><i class="fa-solid fa-arrow-left"></i></button>
+            📝 审查方案：积分大转盘营销功能
+          </span>
+        </h1>
+      </div>
+      
+      <div class="flex items-center space-x-4">
+        <div class="relative hidden sm:block">
+          <i class="fa-solid fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+          <input type="text" placeholder="搜索需求或资产..." class="pl-9 pr-4 py-1.5 bg-slate-100 border-transparent rounded-full text-sm focus:bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 w-64 transition-all">
+        </div>
+        <button class="relative p-2 text-slate-400 hover:text-primary transition-colors">
+          <i class="fa-regular fa-bell text-lg"></i>
+          <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-danger rounded-full border border-white"></span>
+        </button>
+        <button @click="currentTab = 'submit'; chatStep = 1" x-show="currentTab === 'dashboard'" class="hidden sm:flex bg-primary hover:bg-primaryHover text-white px-4 py-2 rounded-md text-sm font-medium transition-colors items-center shadow-sm">
+          <i class="fa-solid fa-plus mr-2"></i> 提交新需求
+        </button>
+      </div>
+    </header>
+
+    <!-- 动态页面内容 -->
+    <main class="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 relative">
+      
+      <!-- ================= 页面 1: Dashboard (工作台看板) ================= -->
+      <div x-show="currentTab === 'dashboard'" x-cloak x-transition.opacity.duration.300ms class="p-6 max-w-7xl mx-auto space-y-6">
+        
+        <!-- 仪表盘统计卡片 -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-slate-500">待我处理的节点</p>
+              <p class="text-2xl font-bold text-slate-800 mt-1">2 <span class="text-sm font-normal text-slate-400">项</span></p>
+            </div>
+            <div class="w-10 h-10 rounded-full bg-amber-100 text-warning flex items-center justify-center text-lg"><i class="fa-solid fa-inbox"></i></div>
+          </div>
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-slate-500">本月节省时间 (AI替代)</p>
+              <p class="text-2xl font-bold text-slate-800 mt-1">42 <span class="text-sm font-normal text-slate-400">小时</span></p>
+            </div>
+            <div class="w-10 h-10 rounded-full bg-indigo-100 text-primary flex items-center justify-center text-lg"><i class="fa-solid fa-bolt"></i></div>
+          </div>
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-slate-500">执行中需求</p>
+              <p class="text-2xl font-bold text-slate-800 mt-1">5 <span class="text-sm font-normal text-slate-400">个</span></p>
+            </div>
+            <div class="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-lg"><i class="fa-solid fa-spinner"></i></div>
+          </div>
+          <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-slate-500">闭环沉淀资产</p>
+              <p class="text-2xl font-bold text-slate-800 mt-1">18 <span class="text-sm font-normal text-slate-400">份</span></p>
+            </div>
+            <div class="w-10 h-10 rounded-full bg-green-100 text-success flex items-center justify-center text-lg"><i class="fa-solid fa-check-double"></i></div>
+          </div>
+        </div>
+
+        <!-- 需求状态看板 (Kanban) -->
+        <h2 class="text-lg font-semibold text-slate-800 pt-2">全局状态透视视图</h2>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+          
+          <!-- Column 1 -->
+          <div class="bg-slate-100/50 rounded-xl p-4 border border-slate-200/60 min-h-[500px]">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-sm font-semibold text-slate-700 flex items-center"><span class="w-2 h-2 rounded-full bg-blue-500 mr-2"></span> 对话/AI 生成中</h3>
+              <span class="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">1</span>
+            </div>
+            <!-- 卡片 -->
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-200 border-l-4 border-l-blue-500 cursor-pointer hover:shadow-md transition">
+              <div class="flex justify-between items-start">
+                <span class="text-[10px] text-slate-500 font-mono">REQ-2026-0301</span>
+                <span class="text-[10px] bg-blue-50 text-blue-600 px-2 rounded font-medium border border-blue-100">AI 产出中</span>
+              </div>
+              <p class="text-sm font-medium text-slate-800 mt-2 line-clamp-2">B端首页控制台改版与数据驾驶舱设计</p>
+              <div class="mt-3 flex items-center">
+                <i class="fa-solid fa-robot text-blue-500 mr-1.5 text-xs"></i>
+                <div class="w-full bg-slate-100 rounded-full h-1.5">
+                  <div class="bg-blue-500 h-1.5 rounded-full" style="width: 60%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Column 2 (Focus) -->
+          <div class="bg-amber-50/30 rounded-xl p-4 border border-amber-100 min-h-[500px]">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-sm font-semibold text-slate-700 flex items-center"><span class="w-2 h-2 rounded-full bg-warning mr-2"></span> 待审查 / 待评审</h3>
+              <span class="text-xs bg-amber-100 text-warning px-2 py-0.5 rounded-full">2</span>
+            </div>
+            
+            <div @click="currentTab = 'review'" class="bg-white p-4 rounded-lg shadow-sm border border-slate-200 border-l-4 border-l-warning cursor-pointer hover:-translate-y-1 hover:shadow-md transition duration-200 relative overflow-hidden group">
+              <!-- 企微通知标识 -->
+              <div class="absolute top-0 right-0 bg-warning text-white text-[10px] px-2 py-0.5 rounded-bl-lg flex items-center shadow-sm">
+                <i class="fa-solid fa-comment text-[9px] mr-1"></i> 已企微提醒
+              </div>
+              
+              <div class="flex justify-between items-start mt-2">
+                <span class="text-[10px] text-slate-500 font-mono">REQ-2026-0305</span>
+              </div>
+              <p class="text-sm font-medium text-slate-800 mt-2">积分大转盘营销功能闭环</p>
+              <div class="mt-3 flex items-center justify-between text-xs text-slate-500">
+                <span class="flex items-center"><i class="fa-regular fa-clock mr-1"></i> 等待了 15分钟</span>
+                <span class="text-warning font-medium">需你评审的 PRD</span>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Column 3 -->
+          <div class="bg-slate-100/50 rounded-xl p-4 border border-slate-200/60 min-h-[500px]">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-sm font-semibold text-slate-700 flex items-center"><span class="w-2 h-2 rounded-full bg-indigo-500 mr-2"></span> 任务执行中</h3>
+              <span class="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">3</span>
+            </div>
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-200 border-l-4 border-l-indigo-500 opacity-70">
+              <div class="flex justify-between items-start">
+                <span class="text-[10px] text-slate-500 font-mono">REQ-2026-0228</span>
+              </div>
+              <p class="text-sm font-medium text-slate-800 mt-2">订单导出性能优化</p>
+              <div class="mt-3 text-[10px] text-slate-500">进度自动同步自 GitLab / 测试平台</div>
+            </div>
+          </div>
+
+          <!-- Column 4 -->
+          <div class="bg-slate-100/50 rounded-xl p-4 border border-slate-200/60 min-h-[500px]">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-sm font-semibold text-slate-700 flex items-center"><span class="w-2 h-2 rounded-full bg-success mr-2"></span> 已验收 / 沉淀</h3>
+              <span class="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">12</span>
+            </div>
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-200 border-l-4 border-l-success">
+              <p class="text-sm font-medium text-slate-800 line-through text-slate-500">发票管理模块重构</p>
+              <div class="mt-3 flex gap-2">
+                <span class="text-[10px] bg-green-50 text-success px-2 py-0.5 rounded border border-green-100">资产已归档</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+
+      <!-- ================= 页面 2: 发起需求 (对话式界面) ================= -->
+      <div x-show="currentTab === 'submit'" x-cloak x-transition.opacity class="h-full flex flex-col items-center bg-slate-50 relative">
+        <!-- 中部窄栏约束 (符合 IM 交互习惯) -->
+        <div class="w-full max-w-3xl flex-1 flex flex-col relative bg-white shadow-[0_0_40px_-15px_rgba(0,0,0,0.1)] border-x border-slate-100">
+          
+          <!-- 对话区域 -->
+          <div class="flex-1 overflow-y-auto p-6 space-y-6">
+            <div class="text-center text-xs text-slate-400 my-4">今天 09:00</div>
+            
+            <!-- AI Message -->
+            <div class="flex items-start">
+              <div class="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center text-white text-xs shadow-md flex-shrink-0 mt-1">
+                <i class="fa-solid fa-robot"></i>
+              </div>
+              <div class="ml-3 max-w-[85%]">
+                <div class="bg-slate-100 text-slate-800 p-3.5 rounded-2xl rounded-tl-sm text-sm leading-relaxed border border-slate-200 shadow-sm">
+                  你好！我是你的 AI 交付助手。<br>
+                  在这里，你只需要<strong>用自己的话描述想要什么功能</strong>，我会自动帮你整理成标准的 PRD 和 原型方案，并推送到流程流转。<br><br>
+                  请问你的新需求是什么？
+                </div>
+              </div>
+            </div>
+
+            <!-- User Message (假设已输入并点击发送) -->
+            <div x-show="chatStep >= 2" x-transition.opacity.duration.500ms class="flex items-start justify-end">
+              <div class="mr-3 max-w-[85%]">
+                <div class="bg-primary text-white p-3.5 rounded-2xl rounded-tr-sm text-sm leading-relaxed shadow-md">
+                  我希望在小程序加一个积分大转盘的抽奖功能。用户每天登录可以送一次，剩下的要消耗 50 积分抽一次。奖品要有实物和优惠券。
+                </div>
+              </div>
+              <img src="https://ui-avatars.com/api/?name=Peng&background=e2e8f0" class="w-8 h-8 rounded-full shadow-md flex-shrink-0 mt-1">
+            </div>
+
+            <!-- AI Progress / 方案生成态 (关键时刻：速度即惊喜) -->
+            <div x-show="chatStep >= 3" x-transition.opacity.duration.800ms class="flex items-start mt-6">
+              <div class="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center text-white text-xs shadow-md flex-shrink-0 mt-1">
+                <i class="fa-solid fa-robot"></i>
+              </div>
+              <div class="ml-3 w-full max-w-[85%]">
+                <div class="bg-white p-4 rounded-xl text-sm border border-slate-200 shadow-sm w-full">
+                  <p class="font-medium text-slate-800 mb-3 flex items-center">
+                    <i class="fa-solid fa-circle-check text-success mr-2"></i> 需求已受理，正在极速为你生成完整方案！
+                  </p>
+                  
+                  <!-- Progress List -->
+                  <div class="space-y-3 pl-1">
+                    <div class="flex items-center text-slate-500">
+                      <i class="fa-solid fa-check text-success w-5 text-center"></i>
+                      <span class="ml-2 text-sm">结构化业务目标与受众分析</span>
+                      <span class="ml-auto text-xs text-slate-400">耗时 3s</span>
+                    </div>
+                    <div class="flex items-center text-slate-500">
+                      <i class="fa-solid fa-check text-success w-5 text-center"></i>
+                      <span class="ml-2 text-sm">撰写完整产品需求文档 (PRD)</span>
+                      <span class="ml-auto text-xs text-slate-400">耗时 12s</span>
+                    </div>
+                    <div class="flex items-center text-slate-800 font-medium">
+                      <i class="fa-solid fa-spinner fa-spin text-primary w-5 text-center"></i>
+                      <span class="ml-2 text-sm">正在绘制可交互原型 DEMO...</span>
+                      <span class="ml-auto text-xs text-primary font-mono">24%</span>
+                    </div>
+                  </div>
+
+                  <!-- 进展条 -->
+                  <div class="w-full bg-slate-100 rounded-full h-1.5 mt-4 overflow-hidden relative">
+                    <div class="bg-primary h-1.5 rounded-full absolute left-0 top-0 transition-all duration-1000 ease-out" style="width: 80%"></div>
+                    <!-- 进度扫光动画 -->
+                    <div class="absolute inset-0 bg-white/20 -skew-x-12 translate-x-[-100%] animate-[shimmer_2s_infinite]"></div>
+                  </div>
+                  
+                  <div class="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
+                    <span class="text-xs text-slate-400"><i class="fa-brands fa-weixin mr-1 text-green-500"></i> 生成完毕后将通过企微通知您审批</span>
+                    <!-- 模拟完成按钮 -->
+                    <button @click="currentTab = 'review'" class="text-xs text-primary font-medium hover:underline cursor-pointer">
+                      (演示) 跳转至生成结果 👉
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 底部撑开空间，防止被输入框遮挡 -->
+            <div class="h-24"></div>
+          </div>
+
+          <!-- 底部输入栏 -->
+          <div class="absolute bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t border-slate-100">
+            <div class="relative flex items-end shadow-sm">
+              <textarea 
+                class="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-sm resize-none" 
+                rows="2" 
+                placeholder="直接说出你的想法，或粘贴粗略的文档..."
+                x-on:keydown.enter.prevent="if(chatStep === 1) chatStep = 2; setTimeout(() => { if(chatStep===2) chatStep = 3; }, 1000);"
+              ></textarea>
+              <div class="absolute right-2 bottom-2">
+                <button @click="if(chatStep === 1) chatStep = 2; setTimeout(() => { if(chatStep===2) chatStep = 3; }, 1000);" class="w-8 h-8 rounded-lg bg-primary hover:bg-primaryHover text-white flex items-center justify-center transition disabled:opacity-50">
+                  <i class="fa-solid fa-paper-plane text-sm"></i>
+                </button>
+              </div>
+            </div>
+            <div class="text-center mt-2 flex justify-center space-x-4 text-[10px] text-slate-400">
+              <span>支持 <i class="fa-solid fa-microphone"></i> 语音转录</span>
+              <span>支持 <i class="fa-solid fa-paperclip"></i> 附件解析</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- ================= 页面 3: 方案审批 (双轨审批工作流) ================= -->
+      <div x-show="currentTab === 'review'" x-cloak x-transition.opacity class="h-full flex flex-col xl:flex-row relative">
+        
+        <!-- 左半部分内容区 (PRD/原型) -->
+        <div class="flex-1 h-full overflow-y-auto bg-white xl:border-r border-slate-200 custom-scrollbar pb-20 xl:pb-0" x-data="{ prdTab: 'prd' }">
+          
+          <!-- 文档内部 Tabs -->
+          <div class="sticky top-0 bg-white/90 backdrop-blur-md z-10 border-b border-slate-100 px-8 pt-6 pb-0">
+            <h2 class="text-2xl font-bold text-slate-900 mb-1">积分大转盘营销功能闭环</h2>
+            <p class="text-sm text-slate-500 mb-6 flex items-center">
+              <span class="mr-4"><i class="fa-solid fa-fingerprint mr-1"></i> REQ-2026-0305</span>
+              <span class="mr-4"><i class="fa-regular fa-clock mr-1"></i> AI 用时: <span class="text-primary font-medium">18 分钟</span></span>
+            </p>
+            
+            <div class="flex space-x-6 border-b-2 border-transparent">
+              <button @click="prdTab = 'prd'" :class="prdTab === 'prd' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800'" class="pb-3 text-sm font-medium border-b-2 transition">
+                <i class="fa-regular fa-file-word mr-1"></i> 结构化 PRD
+              </button>
+              <button @click="prdTab = 'demo'" :class="prdTab === 'demo' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800'" class="pb-3 text-sm font-medium border-b-2 transition">
+                <i class="fa-solid fa-mobile-screen mr-1"></i> 原型 DEMO
+              </button>
+              <button @click="prdTab = 'chat'" :class="prdTab === 'chat' ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800'" class="pb-3 text-sm font-medium border-b-2 transition">
+                <i class="fa-solid fa-comments mr-1"></i> 原始对话记录
+              </button>
+            </div>
+          </div>
+
+          <!-- Tab Content: PRD -->
+          <div x-show="prdTab === 'prd'" class="p-8 max-w-4xl prose prose-sm prose-slate prose-headings:font-semibold prose-a:text-primary">
+            <h3>1. 业务背景与目标</h3>
+            <p>基于用户在对话中提供的需求“希望在小程序加一个积分大转盘的抽奖功能，消耗50积分，包含实物和优惠券奖品”，本需求旨在通过游戏化营销手段，提升小程序的日活（DAU）以及用户的积分消耗率，形成完整的用户留存闭环。</p>
+            
+            <h3>2. 核心业务流程</h3>
+            <div class="bg-slate-50 border border-slate-200 rounded-lg p-4 flex items-center justify-center my-4 h-32 text-slate-400">
+              <i class="fa-solid fa-diagram-project text-3xl mr-3"></i> [AI 生成的 Mermaid 业务流图预览]
+            </div>
+
+            <h3>3. 功能详细说明</h3>
+            <h4>3.1 转盘抽奖主页面 (UI)</h4>
+            <ul>
+              <li><strong>状态检查</strong>：进入页面实时判断当日免费次数（1次），若无免费次数则判断积分余额是否 ≥ 50。</li>
+              <li><strong>转盘视觉</strong>：需展示动态大转盘，包含 8 个均分扇叶（支持后台配置奖项图文）。</li>
+            </ul>
+
+            <h4>3.2 抽奖逻辑机制 (后端交互)</h4>
+            <table>
+              <thead>
+                <tr>
+                  <th>条件分支</th>
+                  <th>系统处理</th>
+                  <th>前端反馈</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>有免费次数</td>
+                  <td>扣减日免额度，返回抽奖结果</td>
+                  <td>展示“恭喜中奖”弹窗</td>
+                </tr>
+                <tr>
+                  <td>无免额且积分足</td>
+                  <td>事务处理：扣除 50 积分，增加流水，返回结果</td>
+                  <td>转盘旋转动画 → 结果弹窗</td>
+                </tr>
+                <tr>
+                  <td>积分不足</td>
+                  <td>阻断交易</td>
+                  <td>Toast：“您的积分余额不足”，引导去赚积分</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h3>4. 异常与兜底设计</h3>
+            <p>当并发抽奖导致奖品超卖时，降级逻辑为：自动发放等值或低价值“安慰积分”，并由系统记录超卖日志。</p>
+          </div>
+
+          <!-- Tab Content: 原型 -->
+          <div x-show="prdTab === 'demo'" x-cloak class="p-8 max-w-4xl flex justify-center">
+             <div class="w-[375px] h-[667px] border-[8px] border-slate-800 rounded-[2.5rem] bg-white relative shadow-2xl overflow-hidden flex flex-col">
+                <div class="absolute top-0 w-full h-6 bg-black flex justify-center items-center z-10"><div class="w-1/3 h-4 bg-black rounded-b-xl"></div></div>
+                <!-- 模拟界面 -->
+                <div class="flex-1 bg-gradient-to-b from-indigo-500 to-purple-600 text-white flex flex-col items-center pt-12">
+                  <h2 class="text-xl font-bold mt-4">幸运大转盘</h2>
+                  <p class="text-xs opacity-80 mt-1">我的积分: 1,250</p>
+                  
+                  <div class="w-64 h-64 rounded-full bg-white/20 border-4 border-yellow-400 mt-10 flex items-center justify-center relative shadow-[0_0_30px_rgba(250,204,21,0.4)]">
+                    <div class="absolute w-0 h-0 border-l-[10px] border-r-[10px] border-t-[20px] border-l-transparent border-r-transparent border-t-yellow-400 -top-2 z-10"></div>
+                    <div class="text-center">
+                      <div class="grid grid-cols-2 gap-1 text-xs font-bold text-yellow-200">
+                        <span>一等奖</span> <span>二等奖</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <button class="mt-12 bg-yellow-400 text-purple-900 font-bold px-10 py-3 rounded-full text-lg shadow-[0_4px_14px_rgba(250,204,21,0.5)]">
+                    立即抽奖 (50积分)
+                  </button>
+                  <p class="text-xs mt-3 opacity-80">今日还有 1 次免费机会</p>
+                </div>
+             </div>
+          </div>
+          
+        </div>
+
+        <!-- ================= 右半部分：审批面板 (双轨审批核心) ================= -->
+        <!-- 桌面端固定右侧，移动端作为抽屉/底部条 -->
+        <div class="w-full xl:w-96 bg-slate-50 flex flex-col flex-shrink-0 border-t xl:border-t-0 border-slate-200">
+          
+          <div class="p-5 border-b border-slate-200 bg-white">
+            <h3 class="text-base font-semibold text-slate-800">决策与推进</h3>
+            <p class="text-xs text-slate-500 mt-1">在此对 AI 产出的设计方案进行拍板流转。</p>
+          </div>
+
+          <div class="flex-1 overflow-y-auto p-5 space-y-6">
+            
+            <!-- 状态卡片 -->
+            <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <div class="flex items-center">
+                <span class="w-2.5 h-2.5 rounded-full bg-warning animate-pulse"></span>
+                <span class="ml-2 text-sm font-semibold text-amber-800">当前阶段：待你评审</span>
+              </div>
+              <p class="text-xs text-amber-700 mt-2 leading-relaxed">
+                AI 方案已生成。若内容符合预期，请点击「审批通过」，系统将自动把此 PRD 拆解为开发任务推进；若不符合，请提交修改意见。
+              </p>
+            </div>
+
+            <!-- 审批操作表单 -->
+            <div class="space-y-4" x-data="{ showReject: false }">
+              <button class="w-full bg-primary hover:bg-primaryHover text-white py-2.5 rounded-lg font-medium shadow-sm transition flex items-center justify-center group">
+                <i class="fa-solid fa-check mr-2 group-hover:scale-110 transition-transform"></i> 方案没问题，通过并拆分任务
+              </button>
+              
+              <button @click="showReject = !showReject" class="w-full bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 py-2.5 rounded-lg font-medium transition">
+                需要修改 (打回给 AI)
+              </button>
+
+              <div x-show="showReject" x-collapse class="bg-white border border-slate-200 rounded-lg p-3 mt-2 shadow-sm">
+                <label class="text-xs font-medium text-slate-600 block mb-1">补充修改意见：</label>
+                <textarea rows="3" class="w-full border border-slate-200 rounded text-sm p-2 focus:ring-1 focus:ring-primary focus:outline-none" placeholder="例如：奖项需要补充支持“积分碎片”类型..."></textarea>
+                <div class="flex justify-end mt-2">
+                  <button class="bg-danger text-white text-xs px-3 py-1.5 rounded font-medium">确认提交修改</button>
+                </div>
+              </div>
+              
+              <div class="text-center border-b border-slate-200 relative mt-4 mb-2">
+                <span class="bg-slate-50 px-2 text-xs text-slate-400 absolute left-1/2 -translate-x-1/2 -top-2">或者</span>
+              </div>
+              
+              <button class="w-full flex items-center justify-center text-sm text-slate-500 hover:text-primary transition py-2">
+                <i class="fa-solid fa-cloud-arrow-up mr-2"></i> 上传人工覆盖文档版本
+              </button>
+            </div>
+
+            <hr class="border-slate-200">
+
+            <!-- 审计与流转时间线 (ActivityTimeline) - “秩序感即信任” -->
+            <div>
+              <h4 class="text-sm font-semibold text-slate-800 mb-4">流转轨迹</h4>
+              <div class="relative border-l-2 border-slate-200 ml-3 space-y-5">
+                
+                <div class="relative pl-5">
+                  <div class="absolute w-3 h-3 bg-warning rounded-full -left-[7px] top-1 border-2 border-slate-50"></div>
+                  <p class="text-sm font-medium text-slate-800">通知业务方评审</p>
+                  <p class="text-xs text-slate-500">企微卡片已推送给 业务方-Peng</p>
+                  <span class="text-[10px] text-slate-400 mt-0.5 block">今天 09:18</span>
+                </div>
+                
+                <div class="relative pl-5">
+                  <div class="absolute w-3 h-3 bg-slate-300 rounded-full -left-[7px] top-1 border-2 border-slate-50"></div>
+                  <p class="text-sm text-slate-600">交付经理审查通过</p>
+                  <p class="text-xs text-slate-500">操作人: 张三 (交付组长)</p>
+                  <span class="text-[10px] text-slate-400 mt-0.5 block">今天 09:16</span>
+                </div>
+
+                <div class="relative pl-5">
+                  <div class="absolute w-3 h-3 bg-slate-300 rounded-full -left-[7px] top-1 border-2 border-slate-50"></div>
+                  <p class="text-sm text-slate-600">AI 极速生成方案完毕</p>
+                  <p class="text-[10px] text-primary bg-indigo-50 px-1 py-0.5 rounded inline-block mt-1">耗时: 18分钟</p>
+                  <span class="text-[10px] text-slate-400 mt-0.5 block">今天 09:18</span>
+                </div>
+
+                <div class="relative pl-5">
+                  <div class="absolute w-3 h-3 bg-slate-300 rounded-full -left-[7px] top-1 border-2 border-slate-50"></div>
+                  <p class="text-sm text-slate-600">对话沟通完成，业务方提交需求</p>
+                  <span class="text-[10px] text-slate-400 mt-0.5 block">今天 09:00</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+        
+      </div>
+      
+    </main>
+  </div>
+
+  <style>
+    /* AI 进度条流光动画 */
+    @keyframes shimmer {
+      100% { transform: translateX(100%); }
+    }
+  </style>
+
+</body>
+</html>
