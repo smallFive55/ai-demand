@@ -64,3 +64,43 @@ export interface ImportAccountResponse {
   failureCount: number
   errors: ImportAccountError[]
 }
+
+// ── Role & Permission ──────────────────────────────────────────
+
+export type RoleStatus = 'enabled' | 'disabled'
+
+export type PermissionScopeType = 'all' | 'project' | 'businessLine'
+
+export interface PermissionScope {
+  type: PermissionScopeType
+  ids?: string[]
+}
+
+export interface PermissionEntry {
+  resource: string
+  actions: string[]
+  scope: PermissionScope
+}
+
+export interface AdminRole {
+  id: string
+  name: string
+  description: string
+  status: RoleStatus
+  permissions: PermissionEntry[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateRolePayload {
+  name: string
+  description?: string
+  permissions?: PermissionEntry[]
+}
+
+export interface UpdateRolePayload {
+  name?: string
+  description?: string
+  permissions?: PermissionEntry[]
+}
+

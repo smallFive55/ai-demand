@@ -4,19 +4,22 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { AccountsService } from './accounts.service'
 import { AuditService } from '../../../modules/audit/audit.service'
+import { RolesService } from '../roles/roles.service'
 
 describe('AccountsService', () => {
   let service: AccountsService
   let auditService: AuditService
+  let module: TestingModule
   let tempDir: string
 
   beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'accounts-spec-'))
     process.env.ACCOUNTS_DATA_FILE = join(tempDir, 'accounts.json')
     process.env.AUDIT_DATA_FILE = join(tempDir, 'audit.json')
+    process.env.ROLES_DATA_FILE = join(tempDir, 'roles.json')
 
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [AccountsService, AuditService],
+    module = await Test.createTestingModule({
+      providers: [AccountsService, AuditService, RolesService],
     }).compile()
 
     service = module.get<AccountsService>(AccountsService)
@@ -26,6 +29,7 @@ describe('AccountsService', () => {
   afterEach(() => {
     delete process.env.ACCOUNTS_DATA_FILE
     delete process.env.AUDIT_DATA_FILE
+    delete process.env.ROLES_DATA_FILE
     rmSync(tempDir, { recursive: true, force: true })
   })
 
@@ -105,5 +109,35 @@ describe('AccountsService', () => {
       reasonCode: 'ROLE_NOT_FOUND',
     })
     expect(auditService.list().some((event) => !event.success)).toBe(true)
+  })
+
+  it('validates roleId against dynamic role data source (not hardcoded)', () => {
+    const rolesService = module.get<RolesService>(RolesService)
+    rolesService.create(
+      { name: 'custom-role', description: '动态角色' },
+      'tester',
+      'req-custom',
+    )
+
+    const account = service.create(
+      { name: 'Dynamic', email: 'dynamic@test.com', roleId: 'custom-role' },
+      'tester',
+      'req-dynamic',
+    )
+    expect(account.roleId).toBe('custom-role')
+  })
+
+  it('rejects disabled role in account creation', () => {
+    const rolesService = module.get<RolesService>(RolesService)
+    const viewer = rolesService.getByName('viewer')!
+    rolesService.disable(viewer.id, 'tester', 'req-dis-viewer')
+
+    expect(() =>
+      service.create(
+        { name: 'Fail', email: 'fail@test.com', roleId: 'viewer' },
+        'tester',
+        'req-fail-disabled',
+      ),
+    ).toThrow('角色不存在')
   })
 })

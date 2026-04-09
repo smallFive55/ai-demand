@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, resolve } from 'path'
 import { AuditService } from '../../../modules/audit/audit.service'
+import { RolesService } from '../roles/roles.service'
 import type {
   Account,
   CreateAccountInput,
@@ -13,14 +14,16 @@ import type {
 
 @Injectable()
 export class AccountsService {
-  private readonly validRoleIds = new Set(['admin', 'manager', 'viewer'])
   private readonly accounts = new Map<string, Account>()
   private readonly dataFile = resolve(
     process.cwd(),
     process.env.ACCOUNTS_DATA_FILE ?? '.runtime-data/accounts.json',
   )
 
-  constructor(private readonly auditService: AuditService) {
+  constructor(
+    private readonly auditService: AuditService,
+    private readonly rolesService: RolesService,
+  ) {
     this.loadFromDisk()
   }
 
@@ -214,9 +217,18 @@ export class AccountsService {
   }
 
   private ensureRoleExists(roleId: string) {
-    if (!this.validRoleIds.has(roleId)) {
-      throw new BadRequestException('角色不存在，禁止使用悬空 roleId')
+    const byId = this.rolesService.getById(roleId)
+    if (byId) {
+      if (byId.status !== 'enabled') {
+        throw new BadRequestException('角色已禁用，禁止关联')
+      }
+      return
     }
+    const byName = this.rolesService.getByName(roleId)
+    if (byName && byName.status === 'enabled') {
+      return
+    }
+    throw new BadRequestException('角色不存在，禁止使用悬空 roleId')
   }
 
   private ensureEmailUnique(email: string) {

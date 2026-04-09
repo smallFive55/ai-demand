@@ -6,8 +6,8 @@ import {
   HttpCode,
   Param,
   Post,
-  Req,
   Put,
+  Req,
   UseGuards,
 } from '@nestjs/common'
 import { randomUUID } from 'crypto'
@@ -15,32 +15,38 @@ import type { Request } from 'express'
 import { RequirePermission } from '../../../common/decorators/require-permission.decorator'
 import { AdminAuthGuard } from '../../../common/guards/admin-auth.guard'
 import { PermissionGuard } from '../../../common/guards/permission.guard'
-import { AccountsService } from './accounts.service'
-import type { CreateAccountInput, UpdateAccountInput } from './accounts.types'
+import { RolesService } from './roles.service'
+import type { CreateRoleInput, PermissionEntry, UpdateRoleInput } from './roles.types'
 
-interface ImportRequestBody {
-  items: CreateAccountInput[]
+interface UpdatePermissionsBody {
+  permissions: PermissionEntry[]
 }
 
-@Controller('admin/accounts')
+@Controller('admin/roles')
 @UseGuards(AdminAuthGuard, PermissionGuard)
-export class AccountsController {
-  constructor(private readonly accountsService: AccountsService) {}
+export class RolesController {
+  constructor(private readonly rolesService: RolesService) {}
 
   @Get()
-  @RequirePermission('admin.account', 'read')
+  @RequirePermission('admin.role', 'read')
   list() {
-    return this.accountsService.list()
+    return this.rolesService.list()
+  }
+
+  @Get(':id')
+  @RequirePermission('admin.role', 'read')
+  getById(@Param('id') id: string) {
+    return this.rolesService.getById(id)
   }
 
   @Post()
-  @RequirePermission('admin.account', 'create')
+  @RequirePermission('admin.role', 'manage')
   create(
-    @Body() body: CreateAccountInput,
+    @Body() body: CreateRoleInput,
     @Req() request: Request & { actor?: { id: string } },
     @Headers('x-request-id') requestIdHeader?: string,
   ) {
-    return this.accountsService.create(
+    return this.rolesService.create(
       body,
       request.actor?.id ?? 'unknown-admin',
       requestIdHeader ?? randomUUID(),
@@ -48,14 +54,14 @@ export class AccountsController {
   }
 
   @Put(':id')
-  @RequirePermission('admin.account', 'update')
+  @RequirePermission('admin.role', 'manage')
   update(
     @Param('id') id: string,
-    @Body() body: UpdateAccountInput,
+    @Body() body: UpdateRoleInput,
     @Req() request: Request & { actor?: { id: string } },
     @Headers('x-request-id') requestIdHeader?: string,
   ) {
-    return this.accountsService.update(
+    return this.rolesService.update(
       id,
       body,
       request.actor?.id ?? 'unknown-admin',
@@ -65,29 +71,45 @@ export class AccountsController {
 
   @Post(':id/disable')
   @HttpCode(200)
-  @RequirePermission('admin.account', 'disable')
+  @RequirePermission('admin.role', 'manage')
   disable(
     @Param('id') id: string,
     @Req() request: Request & { actor?: { id: string } },
     @Headers('x-request-id') requestIdHeader?: string,
   ) {
-    return this.accountsService.disable(
+    return this.rolesService.disable(
       id,
       request.actor?.id ?? 'unknown-admin',
       requestIdHeader ?? randomUUID(),
     )
   }
 
-  @Post('import')
+  @Post(':id/enable')
   @HttpCode(200)
-  @RequirePermission('admin.account', 'import')
-  import(
-    @Body() body: ImportRequestBody,
+  @RequirePermission('admin.role', 'manage')
+  enable(
+    @Param('id') id: string,
     @Req() request: Request & { actor?: { id: string } },
     @Headers('x-request-id') requestIdHeader?: string,
   ) {
-    return this.accountsService.import(
-      body.items,
+    return this.rolesService.enable(
+      id,
+      request.actor?.id ?? 'unknown-admin',
+      requestIdHeader ?? randomUUID(),
+    )
+  }
+
+  @Put(':id/permissions')
+  @RequirePermission('admin.role', 'manage')
+  updatePermissions(
+    @Param('id') id: string,
+    @Body() body: UpdatePermissionsBody,
+    @Req() request: Request & { actor?: { id: string } },
+    @Headers('x-request-id') requestIdHeader?: string,
+  ) {
+    return this.rolesService.updatePermissions(
+      id,
+      body.permissions,
       request.actor?.id ?? 'unknown-admin',
       requestIdHeader ?? randomUUID(),
     )
