@@ -29,3 +29,38 @@ export interface PaginatedResponse<T> {
   page: number
   pageSize: number
 }
+
+export type AccountStatus = 'enabled' | 'disabled'
+
+export interface AdminAccount {
+  id: string
+  name: string
+  email: string
+  roleId: string
+  status: AccountStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateAccountPayload {
+  name: string
+  email: string
+  roleId: string
+}
+
+export interface UpdateAccountPayload {
+  name?: string
+  roleId?: string
+}
+
+export interface ImportAccountError {
+  index: number
+  reasonCode: string
+  message: string
+}
+
+export interface ImportAccountResponse {
+  successCount: number
+  failureCount: number
+  errors: ImportAccountError[]
+}

@@ -5,6 +5,7 @@ export class ApiError extends Error {
     public status: number,
     public code: string,
     message: string,
+    public requestId?: string,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -12,8 +13,16 @@ export class ApiError extends Error {
 }
 
 interface ApiResponse<T> {
-  data: T
-  message?: string
+  success: boolean
+  data?: T
+  error?: {
+    code?: string
+    message?: string
+  }
+  meta?: {
+    occurredAt?: string
+    requestId?: string
+  }
 }
 
 async function request<T>(
@@ -35,16 +44,17 @@ async function request<T>(
   const res = await fetch(url, { ...options, headers })
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
+    const body: ApiResponse<T> = await res.json().catch(() => ({ success: false }))
     throw new ApiError(
       res.status,
-      body.code ?? 'UNKNOWN',
-      body.message ?? res.statusText,
+      body.error?.code ?? 'UNKNOWN',
+      body.error?.message ?? res.statusText,
+      body.meta?.requestId,
     )
   }
 
   const json: ApiResponse<T> = await res.json()
-  return json.data
+  return json.data as T
 }
 
 export const api = {
