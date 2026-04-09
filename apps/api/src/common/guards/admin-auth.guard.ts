@@ -1,7 +1,6 @@
 import {
   CanActivate,
   ExecutionContext,
-  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common'
@@ -27,9 +26,6 @@ export class AdminAuthGuard implements CanActivate {
 
     const token = this.extractBearerToken(authorization)
     const actor = this.parseActor(token)
-    if (actor.role !== 'admin') {
-      throw new ForbiddenException('仅管理员可访问该接口')
-    }
     request.actor = actor
     return true
   }

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, resolve } from 'path'
 
 export interface AuditEvent {
-  action: 'create' | 'update' | 'disable' | 'import'
+  action: 'create' | 'update' | 'disable' | 'import' | 'enable' | 'permission_change'
   actor: string
   target: string
   requestId: string
