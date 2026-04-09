@@ -168,7 +168,7 @@ Claude claude-4.6-opus (Implementation)
 - `apps/web/eslint.config.js` — 移动：Vue ESLint 配置
 - `apps/web/index.html` — 移动：入口 HTML
 - `apps/web/env.d.ts` — 移动：环境类型声明
-- `apps/web/src/**` — 移动：全部前端源码（组件、路由、Store、视图等）
+- `apps/web/src/`** — 移动：全部前端源码（组件、路由、Store、视图等）
 - `apps/web/tests/setup.ts` — 移动：测试 setup
 - `apps/api/package.json` — 新增：后端包配置
 - `apps/api/tsconfig.json` — 新增：NestJS TS 配置
