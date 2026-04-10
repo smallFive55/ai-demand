@@ -10,6 +10,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "migration:run": "typeorm-ts-node-commonjs -d ./src/database/typeorm-data-source.ts migration:run",
+    "migration:revert": "typeorm-ts-node-commonjs -d ./src/database/typeorm-data-source.ts migration:revert",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "encrypt-db-password": "tsx scripts/encrypt-db-password.ts"
   },

@@ -1,39 +1,13 @@
-export type RequirementStatus =
-  | 'collecting'
-  | 'received'
-  | 'pending_manager_review'
-  | 'pending_business_review'
-  | 'pending_task_approval'
-  | 'in_development'
-  | 'ai_executing'
-  | 'pending_delivery_approval'
-  | 'pending_acceptance'
-  | 'accepted'
-  | 'pending_follow_up'
-  | 'reviewed'
-  | 'abandoned'
+export type {
+  CollectedFields,
+  Requirement,
+  RequirementFieldSnapshot,
+  RequirementMessage,
+  RequirementMessageRole,
+  RequirementStatus,
+} from '@ai-demand/contracts'
 
-export interface Requirement {
-  id: string
-  title: string
-  description: string
-  status: RequirementStatus
-  projectIds: string[]
-  submitterId: string
-  deliveryManagerId?: string
-  prdUrl?: string
-  prototypeUrl?: string
-  createdAt: string
-  updatedAt: string
-}
-
-export interface RequirementMessage {
-  id: string
-  requirementId: string
-  role: 'user' | 'ai' | 'system'
-  content: string
-  createdAt: string
-}
+import type { RequirementStatus } from '@ai-demand/contracts'
 
 export const STATUS_LABEL: Record<RequirementStatus, string> = {
   collecting: '对话收集中',

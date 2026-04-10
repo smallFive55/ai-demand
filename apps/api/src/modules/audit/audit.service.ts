@@ -4,7 +4,17 @@ import { Repository } from 'typeorm'
 import { AuditEventEntity } from '../../database/entities/audit-event.entity'
 
 export interface AuditEvent {
-  action: 'create' | 'update' | 'disable' | 'import' | 'enable' | 'permission_change'
+  action:
+    | 'create'
+    | 'update'
+    | 'disable'
+    | 'import'
+    | 'enable'
+    | 'permission_change'
+    | 'requirement_create'
+    | 'requirement_message'
+    | 'requirement_field_snapshot'
+    | 'requirement_llm_failed'
   actor: string
   target: string
   requestId: string

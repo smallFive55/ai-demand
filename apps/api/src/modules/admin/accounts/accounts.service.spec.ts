@@ -2,7 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing'
 import { AccountsService } from './accounts.service'
 import { AuditService } from '../../../modules/audit/audit.service'
 import { IntegrationTestDbModule } from '../../../test/integration-test-db.module'
+import { resetTestDatabaseBeforeFile } from '../../../test/integration-test-hooks'
 import { RolesService } from '../roles/roles.service'
+
+resetTestDatabaseBeforeFile()
 
 describe('AccountsService', () => {
   let service: AccountsService

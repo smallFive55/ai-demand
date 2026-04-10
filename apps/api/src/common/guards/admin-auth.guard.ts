@@ -1,3 +1,7 @@
+/**
+ * 解析 Bearer 令牌并将 `actor`（id + role）挂到 request。
+ * 名称含 Admin 为历史原因：实际支持 admin / business / delivery_manager 等任意业务角色（见 `business:` 等前缀）。
+ */
 import {
   CanActivate,
   ExecutionContext,
@@ -46,6 +50,16 @@ export class AdminAuthGuard implements CanActivate {
     if (token.startsWith('admin:')) {
       const actorId = token.slice('admin:'.length)
       return { id: actorId || 'admin-user', role: 'admin' }
+    }
+
+    if (token.startsWith('business:')) {
+      const actorId = token.slice('business:'.length)
+      return { id: actorId || 'business-user', role: 'business' }
+    }
+
+    if (token.startsWith('delivery_manager:')) {
+      const actorId = token.slice('delivery_manager:'.length)
+      return { id: actorId || 'delivery-manager', role: 'delivery_manager' }
     }
 
     if (token.includes('.')) {

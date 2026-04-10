@@ -1,31 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-
-export type RequirementStatus =
-  | 'collecting'
-  | 'received'
-  | 'pending_manager_review'
-  | 'pending_business_review'
-  | 'pending_task_approval'
-  | 'in_development'
-  | 'ai_executing'
-  | 'pending_delivery_approval'
-  | 'pending_acceptance'
-  | 'accepted'
-  | 'pending_follow_up'
-  | 'reviewed'
-  | 'abandoned'
-
-export interface Requirement {
-  id: string
-  title: string
-  status: RequirementStatus
-  projectId?: string
-  submitterId: string
-  deliveryManagerId?: string
-  createdAt: string
-  updatedAt: string
-}
+import { intakeApi } from '@/features/intake/api'
+import type { Requirement } from '@ai-demand/contracts'
 
 export const useRequirementStore = defineStore('requirement', () => {
   const requirements = ref<Requirement[]>([])
@@ -35,7 +11,7 @@ export const useRequirementStore = defineStore('requirement', () => {
   async function fetchRequirements() {
     loading.value = true
     try {
-      // TODO: API integration
+      // 列表聚合 API 将在后续故事接入；本故事仅保证类型与接待详情一致
       requirements.value = []
     } finally {
       loading.value = false
@@ -45,8 +21,7 @@ export const useRequirementStore = defineStore('requirement', () => {
   async function fetchRequirement(id: string) {
     loading.value = true
     try {
-      // TODO: API integration
-      currentRequirement.value = requirements.value.find((r) => r.id === id) ?? null
+      currentRequirement.value = await intakeApi.getRequirement(id)
     } finally {
       loading.value = false
     }

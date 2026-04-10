@@ -139,3 +139,81 @@ export interface UpdateBusinessUnitPayload {
   admissionThreshold?: number
 }
 
+// ── Requirement intake（接待阶段）────────────────────────────────
+
+export type RequirementStatus =
+  | 'collecting'
+  | 'received'
+  | 'pending_manager_review'
+  | 'pending_business_review'
+  | 'pending_task_approval'
+  | 'in_development'
+  | 'ai_executing'
+  | 'pending_delivery_approval'
+  | 'pending_acceptance'
+  | 'accepted'
+  | 'pending_follow_up'
+  | 'reviewed'
+  | 'abandoned'
+
+/** 消息角色：用户 / AI / 系统 */
+export type RequirementMessageRole = 'user' | 'ai' | 'system'
+
+/**
+ * 对话收集的关键字段（最小集：目标/背景、核心功能或范围、预期效果或成功标准）
+ */
+export interface CollectedFields {
+  /** 目标 / 背景 */
+  goalBackground?: string
+  /** 核心功能或范围 */
+  coreScope?: string
+  /** 预期效果或成功标准 */
+  successCriteria?: string
+  /** 预留：后续与板块/准入对接（非本故事验收项） */
+  suggestedBusinessUnitId?: string
+}
+
+export interface Requirement {
+  id: string
+  title: string
+  description: string
+  status: RequirementStatus
+  projectIds: string[]
+  submitterId: string
+  deliveryManagerId?: string
+  prdUrl?: string
+  prototypeUrl?: string
+  /** 接待对话产生的最新结构化字段（列表页可为空对象） */
+  collectedFields: CollectedFields
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RequirementMessage {
+  id: string
+  requirementId: string
+  role: RequirementMessageRole
+  content: string
+  createdAt: string
+}
+
+export interface RequirementFieldSnapshot {
+  id: string
+  requirementId: string
+  version: number
+  collectedFields: CollectedFields
+  createdAt: string
+}
+
+export interface CreateRequirementResponse extends Requirement {}
+
+export interface AppendRequirementMessagePayload {
+  content: string
+}
+
+export interface AppendRequirementMessageResponse {
+  userMessage: RequirementMessage
+  aiMessage: RequirementMessage
+  collectedFields: CollectedFields
+}
+

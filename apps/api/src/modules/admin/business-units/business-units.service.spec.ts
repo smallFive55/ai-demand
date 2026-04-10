@@ -1,9 +1,13 @@
+import { randomUUID } from 'node:crypto'
 import { Test, TestingModule } from '@nestjs/testing'
 import { AccountsService } from '../accounts/accounts.service'
 import { RolesService } from '../roles/roles.service'
 import { AuditService } from '../../../modules/audit/audit.service'
 import { IntegrationTestDbModule } from '../../../test/integration-test-db.module'
+import { resetTestDatabaseBeforeFile } from '../../../test/integration-test-hooks'
 import { BusinessUnitsService } from './business-units.service'
+
+resetTestDatabaseBeforeFile()
 
 describe('BusinessUnitsService', () => {
   let service: BusinessUnitsService
@@ -30,7 +34,11 @@ describe('BusinessUnitsService', () => {
 
   async function seedManager() {
     return accountsService.create(
-      { name: '交付经理', email: 'dm@example.com', roleId: 'admin' },
+      {
+        name: '交付经理',
+        email: `dm-${randomUUID()}@example.com`,
+        roleId: 'admin',
+      },
       'seed',
       'seed-req',
     )
@@ -197,8 +205,9 @@ describe('BusinessUnitsService', () => {
     const second = list.find((u) => u.name === '将禁用')!
     await service.disable(second.id, 'tester', 'r10')
     const enabled = await service.listEnabled()
-    expect(enabled).toHaveLength(1)
-    expect(enabled[0].id).toBe(a.id)
+    const enabledIds = new Set(enabled.map((u) => u.id))
+    expect(enabledIds.has(a.id)).toBe(true)
+    expect(enabledIds.has(second.id)).toBe(false)
   })
 
   it('rejects non-array functionList on create', async () => {

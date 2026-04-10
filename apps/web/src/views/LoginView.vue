@@ -57,8 +57,10 @@ async function submit() {
       </div>
 
       <div class="p-6 md:p-8">
-        <h1 class="text-xl font-semibold text-text-primary">管理员登录</h1>
-        <p class="mt-1 text-sm text-text-muted">默认账号：admin / admin123456</p>
+        <h1 class="text-xl font-semibold text-text-primary">登录</h1>
+        <p class="mt-1 text-sm text-text-muted">
+          管理员默认：admin / admin123456；业务方联调：business / business123456
+        </p>
 
         <form class="mt-6 space-y-4" @submit.prevent="submit">
           <label class="block text-sm">

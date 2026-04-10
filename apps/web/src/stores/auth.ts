@@ -67,6 +67,18 @@ export const useAuthStore = defineStore('auth', () => {
       return { id, name: '系统管理员', role: 'admin' }
     }
 
+    if (tokenValue.startsWith('business:')) {
+      const rawId = tokenValue.slice('business:'.length).trim()
+      const id = rawId || 'business-user'
+      return { id, name: '业务方用户', role: 'business' }
+    }
+
+    if (tokenValue.startsWith('delivery_manager:')) {
+      const rawId = tokenValue.slice('delivery_manager:'.length).trim()
+      const id = rawId || 'delivery-manager'
+      return { id, name: '交付经理', role: 'delivery_manager' }
+    }
+
     if (!tokenValue.includes('.')) {
       return null
     }

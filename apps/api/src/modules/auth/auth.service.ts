@@ -14,6 +14,7 @@ export class AuthService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     await this.seedDefaultAdmin()
+    await this.seedBusinessUser()
   }
 
   async login(username: string, password: string): Promise<LoginResult> {
@@ -31,8 +32,17 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('用户名或密码错误')
     }
 
+    const tokenPrefix =
+      user.roleName === 'business'
+        ? 'business'
+        : user.roleName === 'delivery_manager'
+          ? 'delivery_manager'
+          : user.roleName === 'admin'
+            ? 'admin'
+            : 'admin'
+
     return {
-      token: `admin:${user.id}`,
+      token: `${tokenPrefix}:${user.id}`,
       user: {
         id: user.id,
         name: user.displayName,
@@ -56,6 +66,30 @@ export class AuthService implements OnModuleInit {
       username,
       displayName,
       roleName: 'admin',
+      status: 'enabled',
+      passwordHash: this.hashPassword(password, salt),
+      passwordSalt: salt,
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+
+  /** 业务方联调账号（与 admin 种子独立，可按用户名幂等创建） */
+  private async seedBusinessUser() {
+    const username = (process.env.BUSINESS_INIT_USERNAME ?? 'business').trim().toLowerCase()
+    const existing = await this.userRepo.findOne({ where: { username } })
+    if (existing) return
+
+    const now = new Date()
+    const displayName = process.env.BUSINESS_INIT_DISPLAY_NAME?.trim() || '业务方（演示）'
+    const password = process.env.BUSINESS_INIT_PASSWORD ?? 'business123456'
+    const salt = randomUUID()
+
+    await this.userRepo.save({
+      id: 'seed-business',
+      username,
+      displayName,
+      roleName: 'business',
       status: 'enabled',
       passwordHash: this.hashPassword(password, salt),
       passwordSalt: salt,

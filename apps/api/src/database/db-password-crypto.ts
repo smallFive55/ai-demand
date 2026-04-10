@@ -115,3 +115,33 @@ export function resolveDbPasswordFromEnv(): string {
     'DB_PASSWORD 解密失败：请检查 DB_PASSWORD_SECRET 是否与加密时一致（注意 CMD 下 set VAR=\'x\' 会把引号算进变量），或密文是否完整含 enc1: 前缀',
   )
 }
+
+/**
+ * Jest / 集成测试用 MySQL 密码。
+ * - 若设置 `TEST_DB_PASSWORD`：明文或 enc1:（优先 `TEST_DB_PASSWORD_SECRET`，否则回退 `DB_PASSWORD_SECRET`）
+ * - 未设置则回退 `resolveDbPasswordFromEnv()`，便于测试库与开发库同机、同账号（仅库名不同）
+ */
+export function resolveTestDbPasswordFromEnv(): string {
+  const testRaw = (process.env.TEST_DB_PASSWORD ?? '').trim()
+  if (testRaw) {
+    if (!testRaw.startsWith(ENCRYPTED_DB_PASSWORD_PREFIX)) {
+      return testRaw
+    }
+    const secretRaw =
+      process.env.TEST_DB_PASSWORD_SECRET ?? process.env.DB_PASSWORD_SECRET ?? ''
+    if (!secretRaw.trim()) {
+      throw new Error(
+        'TEST_DB_PASSWORD 为 enc1: 密文时需配置 TEST_DB_PASSWORD_SECRET 或 DB_PASSWORD_SECRET',
+      )
+    }
+    for (const secret of dbPasswordSecretTryValues(secretRaw)) {
+      try {
+        return decryptDbPassword(testRaw, secret)
+      } catch {
+        /* 尝试下一候选密钥 */
+      }
+    }
+    throw new Error('TEST_DB_PASSWORD 解密失败：请检查密钥是否与加密时一致')
+  }
+  return resolveDbPasswordFromEnv()
+}
