@@ -1,4 +1,5 @@
 import type { TypeOrmModuleOptions } from '@nestjs/typeorm'
+import { resolveDbPasswordFromEnv } from './db-password-crypto'
 import { ALL_TYPEORM_ENTITIES } from './entities'
 
 export function buildTypeOrmOptions(): TypeOrmModuleOptions {
@@ -27,7 +28,7 @@ export function buildTypeOrmOptions(): TypeOrmModuleOptions {
     port: parseInt(process.env.DB_PORT ?? '3306', 10),
     username:
       process.env.DB_USER ?? process.env.DB_USERNAME ?? 'root',
-    password: process.env.DB_PASSWORD ?? '',
+    password: resolveDbPasswordFromEnv(),
     database:
       process.env.DB_NAME ?? process.env.DB_DATABASE ?? 'ai_demand',
     entities: [...ALL_TYPEORM_ENTITIES],

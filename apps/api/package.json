@@ -10,7 +10,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "lint": "eslint \"{src,test}/**/*.ts\" --fix"
+    "lint": "eslint \"{src,test}/**/*.ts\" --fix",
+    "encrypt-db-password": "tsx scripts/encrypt-db-password.ts"
   },
   "dependencies": {
     "@ai-demand/contracts": "workspace:*",
@@ -39,6 +40,7 @@
     "source-map-support": "^0.5.21",
     "supertest": "^7.2.2",
     "ts-jest": "^29.3.4",
+    "tsx": "^4.19.3",
     "ts-loader": "^9.5.1",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^6.0.2",
