@@ -20,6 +20,7 @@ const form = reactive({
   name: '',
   email: '',
   roleId: 'viewer',
+  password: '',
 })
 
 const confirmDisableId = ref<string | null>(null)
@@ -45,6 +46,7 @@ function openCreate() {
   form.name = ''
   form.email = ''
   form.roleId = 'viewer'
+  form.password = ''
   actionError.value = ''
   isDrawerOpen.value = true
 }
@@ -55,6 +57,7 @@ function openEdit(account: Account) {
   form.name = account.name
   form.email = account.email
   form.roleId = account.roleId
+  form.password = ''
   actionError.value = ''
   isDrawerOpen.value = true
 }
@@ -68,8 +71,9 @@ async function submitForm() {
         name: form.name,
         email: form.email,
         roleId: form.roleId,
+        password: form.password,
       })
-      feedback.value = '账号创建成功'
+      feedback.value = '账号创建成功，可使用邮箱与所设密码登录'
     } else if (editingId.value) {
       await accountsApi.update(editingId.value, {
         name: form.name,
@@ -132,6 +136,9 @@ function parseImportPayload(text: string): Array<Pick<Account, 'name' | 'email' 
       name: String(value.name ?? ''),
       email: String(value.email ?? ''),
       roleId: String(value.roleId ?? ''),
+      ...(typeof value.password === 'string' && value.password.trim()
+        ? { password: value.password.trim() }
+        : {}),
     }
   })
 }
@@ -159,7 +166,7 @@ async function submitImport() {
     importError.value = formatGuidedError(
       '导入失败',
       reason,
-      '检查 JSON 格式与字段（name/email/roleId）后重试',
+      '检查 JSON 格式与字段（name/email/roleId，可选 password）后重试',
     )
   }
 }
@@ -234,7 +241,7 @@ onMounted(() => {
       <textarea
         v-model="importText"
         class="min-h-28 w-full rounded-lg border border-border bg-slate-50 p-2 text-sm"
-        placeholder='请输入 JSON 数组，例如: [{"name":"A","email":"a@x.com","roleId":"viewer"}]'
+        placeholder='请输入 JSON 数组。带 password（≥8 位）则同时开通登录，例如: [{"name":"A","email":"a@x.com","roleId":"viewer","password":"secret123"}]'
       />
       <div class="mt-2 flex items-center gap-2">
         <button
@@ -281,6 +288,19 @@ onMounted(() => {
               :disabled="mode === 'edit'"
               class="w-full rounded border border-border px-2 py-1.5 disabled:bg-slate-100"
             />
+            <span class="mt-1 block text-xs text-text-muted">将同时作为登录用户名</span>
+          </label>
+          <label v-if="mode === 'create'" class="block text-sm">
+            <span class="mb-1 block text-text-secondary">登录密码</span>
+            <input
+              v-model="form.password"
+              required
+              type="password"
+              minlength="8"
+              autocomplete="new-password"
+              class="w-full rounded border border-border px-2 py-1.5"
+            />
+            <span class="mt-1 block text-xs text-text-muted">至少 8 位，用于开通登录</span>
           </label>
           <label class="block text-sm">
             <span class="mb-1 block text-text-secondary">角色</span>
@@ -288,6 +308,7 @@ onMounted(() => {
               <option value="admin">admin</option>
               <option value="manager">manager</option>
               <option value="viewer">viewer</option>
+              <option value="business">business（业务方，可发起需求）</option>
             </select>
           </label>
           <button

@@ -1,6 +1,8 @@
 import type { TypeOrmModuleOptions } from '@nestjs/typeorm'
 import { resolveDbPasswordFromEnv, resolveTestDbPasswordFromEnv } from './db-password-crypto'
 import { ALL_TYPEORM_ENTITIES } from './entities'
+import { CreatePasswordResetTokens1744300800000 } from './migrations/1744300800000-CreatePasswordResetTokens'
+import { SeedBusinessAdminRole1744300900000 } from './migrations/1744300900000-SeedBusinessAdminRole'
 import { CreateRequirementIntakeTables1744291200000 } from './migrations/1744291200000-CreateRequirementIntakeTables'
 
 /** Jest 集成测试与 `NODE_ENV=test` 运行时共用：主机默认同 `DB_HOST`，便于远程测试库仅配一套连接 */
@@ -47,7 +49,11 @@ export function buildTypeOrmOptions(): TypeOrmModuleOptions {
     database:
       process.env.DB_NAME ?? process.env.DB_DATABASE ?? 'ai_demand',
     entities: [...ALL_TYPEORM_ENTITIES],
-    migrations: [CreateRequirementIntakeTables1744291200000],
+    migrations: [
+      CreateRequirementIntakeTables1744291200000,
+      CreatePasswordResetTokens1744300800000,
+      SeedBusinessAdminRole1744300900000,
+    ],
     migrationsTableName: 'typeorm_migrations',
     /** 默认启动时补跑未执行迁移，避免仅打开 DB_SYNCHRONIZE 的旧库缺少 requirements 等表导致业务方 500 */
     migrationsRun: autoMigrate,

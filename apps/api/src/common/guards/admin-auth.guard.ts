@@ -47,21 +47,6 @@ export class AdminAuthGuard implements CanActivate {
       return { id: 'dev-admin', role: 'admin' }
     }
 
-    if (token.startsWith('admin:')) {
-      const actorId = token.slice('admin:'.length)
-      return { id: actorId || 'admin-user', role: 'admin' }
-    }
-
-    if (token.startsWith('business:')) {
-      const actorId = token.slice('business:'.length)
-      return { id: actorId || 'business-user', role: 'business' }
-    }
-
-    if (token.startsWith('delivery_manager:')) {
-      const actorId = token.slice('delivery_manager:'.length)
-      return { id: actorId || 'delivery-manager', role: 'delivery_manager' }
-    }
-
     if (token.includes('.')) {
       try {
         const payload = token.split('.')[1]
@@ -79,6 +64,13 @@ export class AdminAuthGuard implements CanActivate {
       } catch {
         throw new UnauthorizedException('令牌解析失败')
       }
+    }
+
+    const colon = token.indexOf(':')
+    if (colon > 0) {
+      const role = token.slice(0, colon)
+      const id = token.slice(colon + 1).trim() || `${role}-user`
+      return { id, role }
     }
 
     throw new UnauthorizedException('无法识别的令牌格式')

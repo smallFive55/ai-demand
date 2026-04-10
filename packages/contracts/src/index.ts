@@ -46,6 +46,11 @@ export interface CreateAccountPayload {
   name: string
   email: string
   roleId: string
+  /**
+   * 登录密码（≥8 位）。单条创建时必填以开通登录。
+   * 批量导入时可选：缺省则仅写入组织账号，不创建登录用户。
+   */
+  password?: string
 }
 
 export interface UpdateAccountPayload {

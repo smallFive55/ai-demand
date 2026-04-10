@@ -33,6 +33,12 @@ const DEFAULT_ROLES: Omit<Role, 'id' | 'createdAt' | 'updatedAt'>[] = [
     status: 'enabled',
     permissions: [{ resource: 'admin.account', actions: ['read'], scope: { type: 'all' } }],
   },
+  {
+    name: 'business',
+    description: '业务方：可发起对话式需求；无系统管理后台权限（需求接口仅校验登录角色名）',
+    status: 'enabled',
+    permissions: [],
+  },
 ]
 
 function roleFromEntity(e: AdminRoleEntity): Role {

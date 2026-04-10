@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { computed, reactive, ref } from 'vue'
+import { RouterLink, useRouter, useRoute } from 'vue-router'
 import { ApiError } from '@/api/client'
 import { authApi } from '@/features/auth/api'
 import { useAuthStore } from '@/stores/auth'
@@ -11,6 +11,7 @@ const authStore = useAuthStore()
 
 const loading = ref(false)
 const errorMessage = ref('')
+const resetOk = computed(() => route.query.reset === 'ok')
 const form = reactive({
   username: 'admin',
   password: 'admin123456',
@@ -59,12 +60,12 @@ async function submit() {
       <div class="p-6 md:p-8">
         <h1 class="text-xl font-semibold text-text-primary">登录</h1>
         <p class="mt-1 text-sm text-text-muted">
-          管理员默认：admin / admin123456；业务方联调：business / business123456
+          管理员默认：admin / admin123456；业务方联调：business / business123456。新建组织账号请使用邮箱作为用户名登录。
         </p>
 
         <form class="mt-6 space-y-4" @submit.prevent="submit">
           <label class="block text-sm">
-            <span class="mb-1 block text-text-secondary">用户名</span>
+            <span class="mb-1 block text-text-secondary">用户名（或邮箱）</span>
             <input
               v-model="form.username"
               class="w-full rounded-lg border border-border bg-slate-50 px-3 py-2"
@@ -84,11 +85,19 @@ async function submit() {
             />
           </label>
 
-          <p v-if="errorMessage" class="rounded bg-red-50 px-3 py-2 text-sm text-danger">
-            {{ errorMessage }}
-          </p>
+        <p v-if="resetOk" class="rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          密码已重置，请使用新密码登录。
+        </p>
 
-          <button
+        <p v-if="errorMessage" class="rounded bg-red-50 px-3 py-2 text-sm text-danger">
+          {{ errorMessage }}
+        </p>
+
+        <p class="text-right text-sm">
+          <RouterLink to="/forgot-password" class="text-primary-600 hover:underline">忘记密码？</RouterLink>
+        </p>
+
+        <button
             class="w-full rounded-md bg-primary-600 px-3 py-2 text-sm font-medium text-text-inverse transition hover:bg-primary-700 disabled:opacity-60"
             type="submit"
             :disabled="loading"

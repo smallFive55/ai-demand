@@ -38,6 +38,7 @@ describe('BusinessUnitsService', () => {
         name: '交付经理',
         email: `dm-${randomUUID()}@example.com`,
         roleId: 'admin',
+        password: 'seedpass00',
       },
       'seed',
       'seed-req',

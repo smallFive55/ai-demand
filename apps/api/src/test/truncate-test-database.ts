@@ -15,6 +15,7 @@ const TABLES = [
   'admin_accounts',
   'admin_roles',
   'admin_auth_users',
+  'password_reset_tokens',
 ] as const
 
 export async function truncateTestDatabase(): Promise<void> {
@@ -43,7 +44,13 @@ export async function truncateTestDatabase(): Promise<void> {
   try {
     await conn.query('SET FOREIGN_KEY_CHECKS=0')
     for (const table of TABLES) {
-      await conn.query(`TRUNCATE TABLE \`${table}\``)
+      try {
+        await conn.query(`TRUNCATE TABLE \`${table}\``)
+      } catch (e: unknown) {
+        const err = e as { errno?: number }
+        // 迁移尚未跑过、或 synchronize 尚未建表时跳过
+        if (err.errno !== 1146) throw e
+      }
     }
     await conn.query('SET FOREIGN_KEY_CHECKS=1')
   } finally {

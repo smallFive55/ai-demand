@@ -5,6 +5,7 @@ import { AuditEventEntity } from './audit-event.entity'
 import { BusinessUnitEntity } from './business-unit.entity'
 import { RequirementFieldSnapshotEntity } from './requirement-field-snapshot.entity'
 import { RequirementMessageEntity } from './requirement-message.entity'
+import { PasswordResetTokenEntity } from './password-reset-token.entity'
 import { RequirementEntity } from './requirement.entity'
 
 export const ALL_TYPEORM_ENTITIES = [
@@ -13,6 +14,7 @@ export const ALL_TYPEORM_ENTITIES = [
   AdminAccountEntity,
   AuditEventEntity,
   BusinessUnitEntity,
+  PasswordResetTokenEntity,
   RequirementEntity,
   RequirementMessageEntity,
   RequirementFieldSnapshotEntity,
@@ -24,6 +26,7 @@ export {
   AdminRoleEntity,
   AuditEventEntity,
   BusinessUnitEntity,
+  PasswordResetTokenEntity,
   RequirementEntity,
   RequirementMessageEntity,
   RequirementFieldSnapshotEntity,

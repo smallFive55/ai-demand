@@ -10,6 +10,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '登录', public: true },
   },
   {
+    path: '/forgot-password',
+    name: 'forgot-password',
+    component: () => import('@/views/ForgotPasswordView.vue'),
+    meta: { title: '忘记密码', public: true },
+  },
+  {
+    path: '/reset-password',
+    name: 'reset-password',
+    component: () => import('@/views/ResetPasswordView.vue'),
+    meta: { title: '重置密码', public: true },
+  },
+  {
     path: '/',
     name: 'dashboard',
     component: () => import('@/views/DashboardView.vue'),
@@ -114,10 +126,12 @@ router.beforeEach((to) => {
   authStore.ensureUserFromToken()
 
   if (to.meta.public) {
+    const pubTitle = (to.meta.title as string) ?? '需求全流程管理系统'
+    document.title = `${pubTitle} - 需求全流程管理系统`
     return true
   }
 
-  if (to.meta.requiresAdmin && (!authStore.isAuthenticated || !authStore.isAdmin)) {
+  if (to.meta.requiresAdmin && (!authStore.isAuthenticated || !authStore.canAccessAdminConsole)) {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
 

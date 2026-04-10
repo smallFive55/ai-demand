@@ -2,7 +2,9 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm'
 import { randomUUID } from 'crypto'
 import { Repository } from 'typeorm'
+import { hashPassword, newPasswordSalt } from '../../../common/crypto/password-hash'
 import { AdminAccountEntity } from '../../../database/entities/admin-account.entity'
+import { AdminAuthUserEntity } from '../../../database/entities/admin-auth-user.entity'
 import { AuditService } from '../../../modules/audit/audit.service'
 import { RolesService } from '../roles/roles.service'
 import type {
@@ -25,11 +27,27 @@ function accountFromEntity(e: AdminAccountEntity): Account {
   }
 }
 
+function redactCreateInput(input: CreateAccountInput): Record<string, unknown> {
+  return {
+    name: input.name,
+    email: input.email,
+    roleId: input.roleId,
+    ...(input.password ? { password: '[redacted]' } : {}),
+  }
+}
+
+type CreateAccountOptions = {
+  /** 为 true 时仅创建组织账号，不要求密码、不写 admin_auth_users（用于批量导入未带密码的行） */
+  skipLogin?: boolean
+}
+
 @Injectable()
 export class AccountsService {
   constructor(
     @InjectRepository(AdminAccountEntity)
     private readonly accountRepo: Repository<AdminAccountEntity>,
+    @InjectRepository(AdminAuthUserEntity)
+    private readonly authUserRepo: Repository<AdminAuthUserEntity>,
     private readonly auditService: AuditService,
     private readonly rolesService: RolesService,
   ) {}
@@ -44,31 +62,83 @@ export class AccountsService {
     return e ? accountFromEntity(e) : undefined
   }
 
-  async create(input: CreateAccountInput, actor: string, requestId: string): Promise<Account> {
+  async create(
+    input: CreateAccountInput,
+    actor: string,
+    requestId: string,
+    options?: CreateAccountOptions,
+  ): Promise<Account> {
+    const skipLogin = options?.skipLogin === true
+    const password = input.password?.trim() ?? ''
+
     try {
       const roleId = await this.resolveEnabledRoleId(input.roleId)
+      const role = await this.rolesService.getById(roleId)
+      if (!role) {
+        throw new BadRequestException('角色不存在，禁止使用悬空 roleId')
+      }
+
+      if (!skipLogin) {
+        if (!password) {
+          throw new BadRequestException('请设置登录密码')
+        }
+        if (password.length < 8) {
+          throw new BadRequestException('登录密码长度至少 8 位')
+        }
+        await this.ensureAuthUsernameAvailable(input.email)
+      }
+
       await this.ensureEmailUnique(input.email)
 
       const now = new Date()
+      const accountId = randomUUID()
+      const emailNorm = input.email.trim().toLowerCase()
       const account: Account = {
-        id: randomUUID(),
+        id: accountId,
         name: input.name.trim(),
-        email: input.email.trim().toLowerCase(),
+        email: emailNorm,
         roleId,
         status: 'enabled',
         createdAt: now.toISOString(),
         updatedAt: now.toISOString(),
       }
 
-      await this.accountRepo.save({
-        id: account.id,
-        name: account.name,
-        email: account.email,
-        roleId: account.roleId,
-        status: account.status,
-        createdAt: now,
-        updatedAt: now,
-      })
+      if (skipLogin) {
+        await this.accountRepo.save({
+          id: account.id,
+          name: account.name,
+          email: account.email,
+          roleId: account.roleId,
+          status: account.status,
+          createdAt: now,
+          updatedAt: now,
+        })
+      } else {
+        const salt = newPasswordSalt()
+        const pwdHash = hashPassword(password, salt)
+        await this.accountRepo.manager.transaction(async (em) => {
+          await em.save(AdminAccountEntity, {
+            id: account.id,
+            name: account.name,
+            email: account.email,
+            roleId: account.roleId,
+            status: account.status,
+            createdAt: now,
+            updatedAt: now,
+          })
+          await em.save(AdminAuthUserEntity, {
+            id: account.id,
+            username: emailNorm,
+            displayName: account.name,
+            roleName: role.name,
+            status: 'enabled',
+            passwordHash: pwdHash,
+            passwordSalt: salt,
+            createdAt: now,
+            updatedAt: now,
+          })
+        })
+      }
 
       await this.auditService.record({
         action: 'create',
@@ -89,7 +159,7 @@ export class AccountsService {
         requestId,
         occurredAt: new Date().toISOString(),
         before: null,
-        after: input,
+        after: redactCreateInput(input),
         success: false,
         reasonCode: this.mapReasonCode(error),
       })
@@ -121,6 +191,18 @@ export class AccountsService {
         roleId: next.roleId,
         updatedAt: now,
       })
+
+      const role = await this.rolesService.getById(nextRoleId)
+      if (role) {
+        const authRow = await this.authUserRepo.findOne({ where: { id } })
+        if (authRow) {
+          await this.authUserRepo.update(id, {
+            roleName: role.name,
+            displayName: next.name,
+            updatedAt: now,
+          })
+        }
+      }
 
       await this.auditService.record({
         action: 'update',
@@ -165,6 +247,7 @@ export class AccountsService {
       }
 
       await this.accountRepo.update(id, { status: 'disabled', updatedAt: now })
+      await this.authUserRepo.update(id, { status: 'disabled', updatedAt: now })
 
       await this.auditService.record({
         action: 'disable',
@@ -200,7 +283,9 @@ export class AccountsService {
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index]
       try {
-        await this.create(item, actor, `${requestId}:row-${index}`)
+        await this.create(item, actor, `${requestId}:row-${index}`, {
+          skipLogin: !item.password?.trim(),
+        })
         successCount += 1
       } catch (error) {
         const reasonCode = this.mapImportReasonCode(error)
@@ -213,7 +298,7 @@ export class AccountsService {
           requestId,
           occurredAt: new Date().toISOString(),
           before: null,
-          after: item,
+          after: redactCreateInput(item),
           success: false,
           reasonCode,
         })
@@ -268,6 +353,14 @@ export class AccountsService {
     }
   }
 
+  private async ensureAuthUsernameAvailable(email: string) {
+    const username = email.trim().toLowerCase()
+    const existing = await this.authUserRepo.findOne({ where: { username } })
+    if (existing) {
+      throw new BadRequestException('该邮箱已注册为登录用户')
+    }
+  }
+
   private mapReasonCode(error: unknown) {
     if (error instanceof NotFoundException) {
       return 'ACCOUNT_NOT_FOUND'
@@ -290,6 +383,9 @@ export class AccountsService {
       }
       if (message.includes('账号邮箱已存在')) {
         return 'DUPLICATE_EMAIL'
+      }
+      if (message.includes('已注册为登录用户')) {
+        return 'DUPLICATE_LOGIN_USERNAME'
       }
       return 'VALIDATION_FAILED'
     }

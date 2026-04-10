@@ -29,11 +29,12 @@ describe('RolesService', () => {
 
   it('seeds default roles on initialization', async () => {
     const roles = await service.list()
-    expect(roles).toHaveLength(3)
+    expect(roles).toHaveLength(4)
     const names = roles.map((r) => r.name)
     expect(names).toContain('admin')
     expect(names).toContain('manager')
     expect(names).toContain('viewer')
+    expect(names).toContain('business')
   })
 
   it('creates a new role and records audit event', async () => {

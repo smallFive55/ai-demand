@@ -8,7 +8,16 @@ export interface User {
   id: string
   name: string
   avatar?: string
-  role: 'business' | 'delivery_manager' | 'admin'
+  /** 与 RBAC 角色名一致，用于令牌解析与权限展示 */
+  role: string
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: '系统管理员',
+  manager: '业务经理',
+  viewer: '只读查看',
+  business: '业务方用户',
+  delivery_manager: '交付经理',
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -21,6 +30,12 @@ export const useAuthStore = defineStore('auth', () => {
   const isAdmin = computed(() => user.value?.role === 'admin')
   const isDeliveryManager = computed(() => user.value?.role === 'delivery_manager')
   const isBusiness = computed(() => user.value?.role === 'business')
+  /** 可进入「系统管理」前台路由（具体接口权限仍由后端校验） */
+  const canAccessAdminConsole = computed(() => {
+    const r = user.value?.role
+    if (!r) return false
+    return r !== 'business' && r !== 'delivery_manager'
+  })
 
   function setAuth(u: User, t: string) {
     user.value = u
@@ -61,44 +76,37 @@ export const useAuthStore = defineStore('auth', () => {
       return { id: 'dev-admin', name: '系统管理员', role: 'admin' }
     }
 
-    if (tokenValue.startsWith('admin:')) {
-      const rawId = tokenValue.slice('admin:'.length).trim()
-      const id = rawId || 'admin-user'
-      return { id, name: '系统管理员', role: 'admin' }
-    }
-
-    if (tokenValue.startsWith('business:')) {
-      const rawId = tokenValue.slice('business:'.length).trim()
-      const id = rawId || 'business-user'
-      return { id, name: '业务方用户', role: 'business' }
-    }
-
-    if (tokenValue.startsWith('delivery_manager:')) {
-      const rawId = tokenValue.slice('delivery_manager:'.length).trim()
-      const id = rawId || 'delivery-manager'
-      return { id, name: '交付经理', role: 'delivery_manager' }
-    }
-
-    if (!tokenValue.includes('.')) {
-      return null
-    }
-
-    try {
-      const payload = tokenValue.split('.')[1]
-      if (!payload) return null
-      const normalized = payload.replace(/-/g, '+').replace(/_/g, '/')
-      const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
-      const json = atob(padded)
-      const parsed = JSON.parse(json) as { sub?: string; userId?: string; role?: User['role']; name?: string }
-      if (!parsed.role) return null
-      return {
-        id: parsed.sub ?? parsed.userId ?? 'user',
-        name: parsed.name ?? '当前用户',
-        role: parsed.role,
+    if (tokenValue.includes('.')) {
+      try {
+        const payload = tokenValue.split('.')[1]
+        if (!payload) return null
+        const normalized = payload.replace(/-/g, '+').replace(/_/g, '/')
+        const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+        const json = atob(padded)
+        const parsed = JSON.parse(json) as { sub?: string; userId?: string; role?: string; name?: string }
+        if (!parsed.role) return null
+        return {
+          id: parsed.sub ?? parsed.userId ?? 'user',
+          name: parsed.name ?? '当前用户',
+          role: parsed.role,
+        }
+      } catch {
+        return null
       }
-    } catch {
-      return null
     }
+
+    const colon = tokenValue.indexOf(':')
+    if (colon > 0) {
+      const role = tokenValue.slice(0, colon)
+      const id = tokenValue.slice(colon + 1).trim() || `${role}-user`
+      return {
+        id,
+        name: ROLE_LABELS[role] ?? '用户',
+        role,
+      }
+    }
+
+    return null
   }
 
   function hydrateUserFromToken() {
@@ -114,6 +122,7 @@ export const useAuthStore = defineStore('auth', () => {
     token,
     isAuthenticated,
     isAdmin,
+    canAccessAdminConsole,
     isDeliveryManager,
     isBusiness,
     setAuth,

@@ -27,6 +27,19 @@ CREATE TABLE IF NOT EXISTS `admin_auth_users` (
   UNIQUE KEY `uk_admin_auth_users_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 忘记密码：一次性重置令牌（仅存 SHA-256 十六进制）
+CREATE TABLE IF NOT EXISTS `password_reset_tokens` (
+  `id` CHAR(36) NOT NULL,
+  `user_id` VARCHAR(64) NOT NULL,
+  `token_hash` VARCHAR(64) NOT NULL,
+  `expires_at` DATETIME(3) NOT NULL,
+  `used_at` DATETIME(3) NULL,
+  `created_at` DATETIME(3) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_password_reset_tokens_token_hash` (`token_hash`),
+  KEY `idx_password_reset_tokens_user_id` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- RBAC 角色
 CREATE TABLE IF NOT EXISTS `admin_roles` (
   `id` CHAR(36) NOT NULL,

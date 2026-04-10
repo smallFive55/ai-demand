@@ -58,6 +58,7 @@ describe('AppController (e2e)', () => {
         name: 'Alice',
         email: 'alice@example.com',
         roleId: adminRole!.id,
+        password: 'alicealice1',
       })
       .expect(201)
 
@@ -66,6 +67,20 @@ describe('AppController (e2e)', () => {
     expect(createRes.body).toHaveProperty('data.status', 'enabled')
 
     const accountId = createRes.body.data.id as string
+
+    const loginRes = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({
+        username: 'alice@example.com',
+        password: 'alicealice1',
+      })
+      .expect(200)
+
+    expect(loginRes.body).toHaveProperty('success', true)
+    expect(loginRes.body.data).toMatchObject({
+      user: { name: 'Alice', role: 'admin' },
+    })
+    expect(String(loginRes.body.data.token)).toContain(':')
 
     const updateRes = await request(app.getHttpServer())
       .put(`/api/admin/accounts/${accountId}`)
@@ -138,6 +153,7 @@ describe('AppController (e2e)', () => {
         name: 'Eve',
         email: 'eve@example.com',
         roleId: 'non-existing',
+        password: 'eveeveeve1',
       })
       .expect(400)
 

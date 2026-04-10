@@ -13,4 +13,9 @@ interface LoginResponse {
 
 export const authApi = {
   login: (payload: LoginPayload) => api.post<LoginResponse>('/auth/login', payload),
+  changePassword: (payload: { currentPassword: string; newPassword: string }) =>
+    api.post<{ ok: true }>('/auth/change-password', payload),
+  forgotPassword: (email: string) => api.post<{ ok: true }>('/auth/forgot-password', { email }),
+  resetPassword: (payload: { token: string; newPassword: string }) =>
+    api.post<{ ok: true }>('/auth/reset-password', payload),
 }

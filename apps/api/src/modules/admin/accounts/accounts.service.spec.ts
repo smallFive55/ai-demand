@@ -34,6 +34,7 @@ describe('AccountsService', () => {
         name: 'Alice',
         email: 'alice@example.com',
         roleId: 'admin',
+        password: 'alicepwd00',
       },
       'tester',
       'req-1',
@@ -57,6 +58,7 @@ describe('AccountsService', () => {
           name: 'Bob',
           email: 'bob@example.com',
           roleId: 'unknown-role',
+          password: 'bobbobbob0',
         },
         'tester',
         'req-2',
@@ -70,6 +72,7 @@ describe('AccountsService', () => {
         name: 'Cathy',
         email: 'cathy@example.com',
         roleId: 'viewer',
+        password: 'cathypwd00',
       },
       'tester',
       'req-3',
@@ -86,6 +89,7 @@ describe('AccountsService', () => {
           name: 'David',
           email: 'david@example.com',
           roleId: 'manager',
+          password: 'davidpwd00',
         },
         {
           name: 'Error',
@@ -116,7 +120,12 @@ describe('AccountsService', () => {
     )
 
     const account = await service.create(
-      { name: 'Dynamic', email: 'dynamic@test.com', roleId: 'custom-role' },
+      {
+        name: 'Dynamic',
+        email: 'dynamic@test.com',
+        roleId: 'custom-role',
+        password: 'dynamicpwd0',
+      },
       'tester',
       'req-dynamic',
     )
@@ -130,7 +139,12 @@ describe('AccountsService', () => {
 
     await expect(
       service.create(
-        { name: 'Fail', email: 'fail@test.com', roleId: 'viewer' },
+        {
+          name: 'Fail',
+          email: 'fail@test.com',
+          roleId: 'viewer',
+          password: 'failfail00',
+        },
         'tester',
         'req-fail-disabled',
       ),

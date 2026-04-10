@@ -6,6 +6,8 @@ import { DataSource } from 'typeorm'
 import '../load-env'
 import { resolveDbPasswordFromEnv } from './db-password-crypto'
 import { ALL_TYPEORM_ENTITIES } from './entities'
+import { CreatePasswordResetTokens1744300800000 } from './migrations/1744300800000-CreatePasswordResetTokens'
+import { SeedBusinessAdminRole1744300900000 } from './migrations/1744300900000-SeedBusinessAdminRole'
 import { CreateRequirementIntakeTables1744291200000 } from './migrations/1744291200000-CreateRequirementIntakeTables'
 
 export default new DataSource({
@@ -17,6 +19,10 @@ export default new DataSource({
   password: resolveDbPasswordFromEnv(),
   database: process.env.DB_NAME ?? process.env.DB_DATABASE ?? 'ai_demand',
   entities: [...ALL_TYPEORM_ENTITIES],
-  migrations: [CreateRequirementIntakeTables1744291200000],
+  migrations: [
+    CreateRequirementIntakeTables1744291200000,
+    CreatePasswordResetTokens1744300800000,
+    SeedBusinessAdminRole1744300900000,
+  ],
   migrationsTableName: 'typeorm_migrations',
 })
