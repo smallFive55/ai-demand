@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
+import { InjectRepository } from '@nestjs/typeorm'
 import { randomUUID } from 'crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { dirname, resolve } from 'path'
+import { Repository } from 'typeorm'
+import { AdminAccountEntity } from '../../../database/entities/admin-account.entity'
 import { AuditService } from '../../../modules/audit/audit.service'
 import { RolesService } from '../roles/roles.service'
 import type {
@@ -12,58 +13,76 @@ import type {
   UpdateAccountInput,
 } from './accounts.types'
 
+function accountFromEntity(e: AdminAccountEntity): Account {
+  return {
+    id: e.id,
+    name: e.name,
+    email: e.email,
+    roleId: e.roleId,
+    status: e.status,
+    createdAt: e.createdAt.toISOString(),
+    updatedAt: e.updatedAt.toISOString(),
+  }
+}
+
 @Injectable()
 export class AccountsService {
-  private readonly accounts = new Map<string, Account>()
-  private readonly dataFile = resolve(
-    process.cwd(),
-    process.env.ACCOUNTS_DATA_FILE ?? '.runtime-data/accounts.json',
-  )
-
   constructor(
+    @InjectRepository(AdminAccountEntity)
+    private readonly accountRepo: Repository<AdminAccountEntity>,
     private readonly auditService: AuditService,
     private readonly rolesService: RolesService,
-  ) {
-    this.loadFromDisk()
+  ) {}
+
+  async list(): Promise<Account[]> {
+    const rows = await this.accountRepo.find({ order: { createdAt: 'ASC' } })
+    return rows.map(accountFromEntity)
   }
 
-  list() {
-    return Array.from(this.accounts.values()).sort((a, b) =>
-      a.createdAt.localeCompare(b.createdAt),
-    )
+  async getById(id: string): Promise<Account | undefined> {
+    const e = await this.accountRepo.findOne({ where: { id } })
+    return e ? accountFromEntity(e) : undefined
   }
 
-  create(input: CreateAccountInput, actor: string, requestId: string) {
+  async create(input: CreateAccountInput, actor: string, requestId: string): Promise<Account> {
     try {
-      this.ensureRoleExists(input.roleId)
-      this.ensureEmailUnique(input.email)
+      const roleId = await this.resolveEnabledRoleId(input.roleId)
+      await this.ensureEmailUnique(input.email)
 
-      const now = new Date().toISOString()
+      const now = new Date()
       const account: Account = {
         id: randomUUID(),
         name: input.name.trim(),
         email: input.email.trim().toLowerCase(),
-        roleId: input.roleId,
+        roleId,
         status: 'enabled',
-        createdAt: now,
-        updatedAt: now,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
       }
 
-      this.accounts.set(account.id, account)
-      this.persist()
-      this.auditService.record({
+      await this.accountRepo.save({
+        id: account.id,
+        name: account.name,
+        email: account.email,
+        roleId: account.roleId,
+        status: account.status,
+        createdAt: now,
+        updatedAt: now,
+      })
+
+      await this.auditService.record({
         action: 'create',
         actor,
         target: account.id,
         requestId,
-        occurredAt: now,
+        occurredAt: account.createdAt,
         before: null,
         after: account,
         success: true,
       })
       return account
     } catch (error) {
-      this.auditService.record({
+      await this.auditService.record({
         action: 'create',
         actor,
         target: input.email,
@@ -78,26 +97,32 @@ export class AccountsService {
     }
   }
 
-  update(id: string, input: UpdateAccountInput, actor: string, requestId: string) {
+  async update(id: string, input: UpdateAccountInput, actor: string, requestId: string): Promise<Account> {
     try {
-      const current = this.accounts.get(id)
-      if (!current) {
+      const currentE = await this.accountRepo.findOne({ where: { id } })
+      if (!currentE) {
         throw new NotFoundException('账号不存在')
       }
-      if (input.roleId) {
-        this.ensureRoleExists(input.roleId)
-      }
-
+      const current = accountFromEntity(currentE)
       const before = { ...current }
+      const now = new Date()
+      const nextRoleId = input.roleId
+        ? await this.resolveEnabledRoleId(input.roleId)
+        : current.roleId
       const next: Account = {
         ...current,
         name: input.name?.trim() || current.name,
-        roleId: input.roleId || current.roleId,
-        updatedAt: new Date().toISOString(),
+        roleId: nextRoleId,
+        updatedAt: now.toISOString(),
       }
-      this.accounts.set(id, next)
-      this.persist()
-      this.auditService.record({
+
+      await this.accountRepo.update(id, {
+        name: next.name,
+        roleId: next.roleId,
+        updatedAt: now,
+      })
+
+      await this.auditService.record({
         action: 'update',
         actor,
         target: id,
@@ -109,7 +134,7 @@ export class AccountsService {
       })
       return next
     } catch (error) {
-      this.auditService.record({
+      await this.auditService.record({
         action: 'update',
         actor,
         target: id,
@@ -124,35 +149,36 @@ export class AccountsService {
     }
   }
 
-  disable(id: string, actor: string, requestId: string) {
+  async disable(id: string, actor: string, requestId: string): Promise<Account> {
     try {
-      const current = this.accounts.get(id)
-      if (!current) {
+      const currentE = await this.accountRepo.findOne({ where: { id } })
+      if (!currentE) {
         throw new NotFoundException('账号不存在')
       }
-
+      const current = accountFromEntity(currentE)
       const before = { ...current }
-      const now = new Date().toISOString()
+      const now = new Date()
       const next: Account = {
         ...current,
         status: 'disabled',
-        updatedAt: now,
+        updatedAt: now.toISOString(),
       }
-      this.accounts.set(id, next)
-      this.persist()
-      this.auditService.record({
+
+      await this.accountRepo.update(id, { status: 'disabled', updatedAt: now })
+
+      await this.auditService.record({
         action: 'disable',
         actor,
         target: id,
         requestId,
-        occurredAt: now,
+        occurredAt: next.updatedAt,
         before,
         after: next,
         success: true,
       })
       return next
     } catch (error) {
-      this.auditService.record({
+      await this.auditService.record({
         action: 'disable',
         actor,
         target: id,
@@ -167,19 +193,20 @@ export class AccountsService {
     }
   }
 
-  import(items: CreateAccountInput[], actor: string, requestId: string): ImportAccountsSummary {
+  async import(items: CreateAccountInput[], actor: string, requestId: string): Promise<ImportAccountsSummary> {
     const errors: ImportAccountResult[] = []
     let successCount = 0
 
-    items.forEach((item, index) => {
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index]
       try {
-        this.create(item, actor, `${requestId}:row-${index}`)
+        await this.create(item, actor, `${requestId}:row-${index}`)
         successCount += 1
       } catch (error) {
         const reasonCode = this.mapImportReasonCode(error)
         const message = error instanceof Error ? error.message : '导入失败'
         errors.push({ index, reasonCode, message })
-        this.auditService.record({
+        await this.auditService.record({
           action: 'import',
           actor,
           target: item.email,
@@ -191,9 +218,9 @@ export class AccountsService {
           reasonCode,
         })
       }
-    })
+    }
 
-    this.auditService.record({
+    await this.auditService.record({
       action: 'import',
       actor,
       target: `batch:${requestId}`,
@@ -216,27 +243,27 @@ export class AccountsService {
     }
   }
 
-  private ensureRoleExists(roleId: string) {
-    const byId = this.rolesService.getById(roleId)
-    if (byId) {
-      if (byId.status !== 'enabled') {
+  /** 接受角色 UUID 或角色名（如 admin / manager），统一解析为 UUID 以满足外键 */
+  private async resolveEnabledRoleId(roleIdOrName: string): Promise<string> {
+    const trimmed = roleIdOrName.trim()
+    let role = await this.rolesService.getById(trimmed)
+    if (role) {
+      if (role.status !== 'enabled') {
         throw new BadRequestException('角色已禁用，禁止关联')
       }
-      return
+      return role.id
     }
-    const byName = this.rolesService.getByName(roleId)
-    if (byName && byName.status === 'enabled') {
-      return
+    role = await this.rolesService.getByName(trimmed)
+    if (role && role.status === 'enabled') {
+      return role.id
     }
     throw new BadRequestException('角色不存在，禁止使用悬空 roleId')
   }
 
-  private ensureEmailUnique(email: string) {
+  private async ensureEmailUnique(email: string) {
     const target = email.trim().toLowerCase()
-    const duplicate = Array.from(this.accounts.values()).some(
-      (account) => account.email === target,
-    )
-    if (duplicate) {
+    const existing = await this.accountRepo.findOne({ where: { email: target } })
+    if (existing) {
       throw new BadRequestException('账号邮箱已存在')
     }
   }
@@ -255,10 +282,8 @@ export class AccountsService {
     if (error instanceof BadRequestException) {
       const response = error.getResponse()
       const message =
-        typeof response === 'object' &&
-        response !== null &&
-        'message' in response
-          ? String(response.message)
+        typeof response === 'object' && response !== null && 'message' in response
+          ? String((response as { message: unknown }).message)
           : error.message
       if (message.includes('角色不存在')) {
         return 'ROLE_NOT_FOUND'
@@ -272,28 +297,5 @@ export class AccountsService {
       return 'ACCOUNT_NOT_FOUND'
     }
     return 'IMPORT_FAILED'
-  }
-
-  private loadFromDisk() {
-    if (!existsSync(this.dataFile)) {
-      return
-    }
-    const raw = readFileSync(this.dataFile, 'utf8')
-    if (!raw.trim()) {
-      return
-    }
-    const parsed = JSON.parse(raw) as Account[]
-    parsed.forEach((account) => {
-      this.accounts.set(account.id, account)
-    })
-  }
-
-  private persist() {
-    mkdirSync(dirname(this.dataFile), { recursive: true })
-    writeFileSync(
-      this.dataFile,
-      JSON.stringify(Array.from(this.accounts.values()), null, 2),
-      'utf8',
-    )
   }
 }

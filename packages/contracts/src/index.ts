@@ -104,3 +104,38 @@ export interface UpdateRolePayload {
   permissions?: PermissionEntry[]
 }
 
+// ── Business unit (板块) ───────────────────────────────────────
+
+export type BusinessUnitStatus = 'enabled' | 'disabled'
+
+export interface BusinessUnit {
+  id: string
+  name: string
+  description: string
+  functionList: string[]
+  deliveryManagerId: string
+  admissionCriteria: string
+  admissionThreshold: number
+  status: BusinessUnitStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateBusinessUnitPayload {
+  name: string
+  description: string
+  functionList: string[]
+  deliveryManagerId: string
+  admissionCriteria: string
+  admissionThreshold?: number
+}
+
+export interface UpdateBusinessUnitPayload {
+  name?: string
+  description?: string
+  functionList?: string[]
+  deliveryManagerId?: string
+  admissionCriteria?: string
+  admissionThreshold?: number
+}
+

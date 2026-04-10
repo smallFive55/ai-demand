@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { dirname, resolve } from 'path'
+import { InjectRepository } from '@nestjs/typeorm'
+import { Repository } from 'typeorm'
+import { AuditEventEntity } from '../../database/entities/audit-event.entity'
 
 export interface AuditEvent {
   action: 'create' | 'update' | 'disable' | 'import' | 'enable' | 'permission_change'
@@ -16,42 +17,42 @@ export interface AuditEvent {
 
 @Injectable()
 export class AuditService {
-  private readonly events: AuditEvent[] = []
-  private readonly dataFile = resolve(
-    process.cwd(),
-    process.env.AUDIT_DATA_FILE ?? '.runtime-data/audit-events.json',
-  )
+  constructor(
+    @InjectRepository(AuditEventEntity)
+    private readonly repo: Repository<AuditEventEntity>,
+  ) {}
 
-  constructor() {
-    this.loadFromDisk()
+  async record(event: AuditEvent): Promise<void> {
+    const row = this.repo.create({
+      action: event.action,
+      actor: event.actor,
+      target: event.target,
+      requestId: event.requestId,
+      occurredAt: new Date(event.occurredAt),
+      beforeData: event.before,
+      afterData: event.after,
+      success: event.success,
+      reasonCode: event.reasonCode ?? null,
+    })
+    await this.repo.save(row)
   }
 
-  record(event: AuditEvent) {
-    this.events.push(event)
-    this.persist()
-  }
-
-  list(requestId?: string) {
-    if (!requestId) {
-      return [...this.events]
+  async list(requestId?: string): Promise<AuditEvent[]> {
+    const qb = this.repo.createQueryBuilder('e').orderBy('e.id', 'ASC')
+    if (requestId) {
+      qb.where('e.requestId = :rid', { rid: requestId })
     }
-    return this.events.filter((event) => event.requestId === requestId)
-  }
-
-  private loadFromDisk() {
-    if (!existsSync(this.dataFile)) {
-      return
-    }
-    const raw = readFileSync(this.dataFile, 'utf8')
-    if (!raw.trim()) {
-      return
-    }
-    const parsed = JSON.parse(raw) as AuditEvent[]
-    this.events.push(...parsed)
-  }
-
-  private persist() {
-    mkdirSync(dirname(this.dataFile), { recursive: true })
-    writeFileSync(this.dataFile, JSON.stringify(this.events, null, 2), 'utf8')
+    const rows = await qb.getMany()
+    return rows.map((r) => ({
+      action: r.action as AuditEvent['action'],
+      actor: r.actor,
+      target: r.target,
+      requestId: r.requestId,
+      occurredAt: r.occurredAt.toISOString(),
+      before: r.beforeData,
+      after: r.afterData,
+      success: r.success,
+      reasonCode: r.reasonCode ?? undefined,
+    }))
   }
 }

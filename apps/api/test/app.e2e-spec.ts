@@ -1,8 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { INestApplication } from '@nestjs/common'
-import { mkdtempSync, rmSync } from 'fs'
-import { tmpdir } from 'os'
-import { join } from 'path'
 import request from 'supertest'
 import type { Response } from 'supertest'
 import { AppModule } from '../src/app.module'
@@ -11,13 +8,8 @@ import { GlobalExceptionFilter } from '../src/common/filters/http-exception.filt
 
 describe('AppController (e2e)', () => {
   let app: INestApplication
-  let tempDir: string
 
   beforeEach(async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'api-e2e-'))
-    process.env.ACCOUNTS_DATA_FILE = join(tempDir, 'accounts.json')
-    process.env.AUDIT_DATA_FILE = join(tempDir, 'audit.json')
-
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile()
@@ -31,9 +23,6 @@ describe('AppController (e2e)', () => {
 
   afterEach(async () => {
     await app.close()
-    delete process.env.ACCOUNTS_DATA_FILE
-    delete process.env.AUDIT_DATA_FILE
-    rmSync(tempDir, { recursive: true, force: true })
   })
 
   it('/api/health (GET)', () => {
@@ -50,6 +39,17 @@ describe('AppController (e2e)', () => {
   })
 
   it('/api/admin/accounts lifecycle (POST/PUT/POST-disable)', async () => {
+    const rolesRes = await request(app.getHttpServer())
+      .get('/api/admin/roles')
+      .set('Authorization', 'Bearer admin:e2e')
+      .expect(200)
+
+    const roles = rolesRes.body.data as { id: string; name: string }[]
+    const adminRole = roles.find((r) => r.name === 'admin')
+    const managerRole = roles.find((r) => r.name === 'manager')
+    expect(adminRole).toBeDefined()
+    expect(managerRole).toBeDefined()
+
     const createRes = await request(app.getHttpServer())
       .post('/api/admin/accounts')
       .set('Authorization', 'Bearer admin:e2e')
@@ -57,7 +57,7 @@ describe('AppController (e2e)', () => {
       .send({
         name: 'Alice',
         email: 'alice@example.com',
-        roleId: 'admin',
+        roleId: adminRole!.id,
       })
       .expect(201)
 
@@ -73,13 +73,13 @@ describe('AppController (e2e)', () => {
       .set('x-request-id', 'req-update-1')
       .send({
         name: 'Alice Zhang',
-        roleId: 'manager',
+        roleId: managerRole!.id,
       })
       .expect(200)
 
     expect(updateRes.body).toHaveProperty('success', true)
     expect(updateRes.body).toHaveProperty('data.name', 'Alice Zhang')
-    expect(updateRes.body).toHaveProperty('data.roleId', 'manager')
+    expect(updateRes.body).toHaveProperty('data.roleId', managerRole!.id)
 
     const disableRes = await request(app.getHttpServer())
       .post(`/api/admin/accounts/${accountId}/disable`)
@@ -92,6 +92,14 @@ describe('AppController (e2e)', () => {
   })
 
   it('/api/admin/accounts/import (POST) keeps partial success and error reasons', async () => {
+    const rolesRes = await request(app.getHttpServer())
+      .get('/api/admin/roles')
+      .set('Authorization', 'Bearer admin:e2e')
+      .expect(200)
+    const roles = rolesRes.body.data as { id: string; name: string }[]
+    const viewerRole = roles.find((r) => r.name === 'viewer')
+    expect(viewerRole).toBeDefined()
+
     const importRes = await request(app.getHttpServer())
       .post('/api/admin/accounts/import')
       .set('Authorization', 'Bearer admin:e2e')
@@ -101,7 +109,7 @@ describe('AppController (e2e)', () => {
           {
             name: 'Bob',
             email: 'bob@example.com',
-            roleId: 'viewer',
+            roleId: viewerRole!.id,
           },
           {
             name: 'Broken',
@@ -140,12 +148,18 @@ describe('AppController (e2e)', () => {
   })
 
   it('/api/admin/accounts requires admin authorization', async () => {
+    const rolesRes = await request(app.getHttpServer())
+      .get('/api/admin/roles')
+      .set('Authorization', 'Bearer admin:e2e')
+      .expect(200)
+    const adminRole = (rolesRes.body.data as { id: string; name: string }[]).find((r) => r.name === 'admin')
+
     await request(app.getHttpServer())
       .post('/api/admin/accounts')
       .send({
         name: 'NoAuth',
         email: 'noauth@example.com',
-        roleId: 'admin',
+        roleId: adminRole!.id,
       })
       .expect(401)
   })

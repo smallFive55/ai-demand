@@ -1,40 +1,32 @@
 import { Test, TestingModule } from '@nestjs/testing'
-import { mkdtempSync, rmSync } from 'fs'
-import { tmpdir } from 'os'
-import { join } from 'path'
 import { AccountsService } from './accounts.service'
 import { AuditService } from '../../../modules/audit/audit.service'
+import { IntegrationTestDbModule } from '../../../test/integration-test-db.module'
 import { RolesService } from '../roles/roles.service'
 
 describe('AccountsService', () => {
   let service: AccountsService
   let auditService: AuditService
-  let module: TestingModule
-  let tempDir: string
+  let moduleRef: TestingModule
 
   beforeEach(async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'accounts-spec-'))
-    process.env.ACCOUNTS_DATA_FILE = join(tempDir, 'accounts.json')
-    process.env.AUDIT_DATA_FILE = join(tempDir, 'audit.json')
-    process.env.ROLES_DATA_FILE = join(tempDir, 'roles.json')
-
-    module = await Test.createTestingModule({
+    moduleRef = await Test.createTestingModule({
+      imports: [IntegrationTestDbModule],
       providers: [AccountsService, AuditService, RolesService],
     }).compile()
 
-    service = module.get<AccountsService>(AccountsService)
-    auditService = module.get<AuditService>(AuditService)
+    await moduleRef.init()
+
+    service = moduleRef.get<AccountsService>(AccountsService)
+    auditService = moduleRef.get<AuditService>(AuditService)
   })
 
-  afterEach(() => {
-    delete process.env.ACCOUNTS_DATA_FILE
-    delete process.env.AUDIT_DATA_FILE
-    delete process.env.ROLES_DATA_FILE
-    rmSync(tempDir, { recursive: true, force: true })
+  afterEach(async () => {
+    await moduleRef.close()
   })
 
-  it('creates account and records audit event', () => {
-    const created = service.create(
+  it('creates account and records audit event', async () => {
+    const created = await service.create(
       {
         name: 'Alice',
         email: 'alice@example.com',
@@ -46,16 +38,17 @@ describe('AccountsService', () => {
 
     expect(created).toHaveProperty('id')
     expect(created).toHaveProperty('status', 'enabled')
-    expect(auditService.list()).toHaveLength(1)
-    expect(auditService.list()[0]).toMatchObject({
+    const events = await auditService.list()
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({
       action: 'create',
       requestId: 'req-1',
       success: true,
     })
   })
 
-  it('throws when role does not exist', () => {
-    expect(() =>
+  it('throws when role does not exist', async () => {
+    await expect(
       service.create(
         {
           name: 'Bob',
@@ -65,11 +58,11 @@ describe('AccountsService', () => {
         'tester',
         'req-2',
       ),
-    ).toThrow('角色不存在')
+    ).rejects.toThrow('角色不存在')
   })
 
-  it('supports disable lifecycle', () => {
-    const created = service.create(
+  it('supports disable lifecycle', async () => {
+    const created = await service.create(
       {
         name: 'Cathy',
         email: 'cathy@example.com',
@@ -79,12 +72,12 @@ describe('AccountsService', () => {
       'req-3',
     )
 
-    const disabled = service.disable(created.id, 'tester', 'req-4')
+    const disabled = await service.disable(created.id, 'tester', 'req-4')
     expect(disabled).toHaveProperty('status', 'disabled')
   })
 
-  it('returns partial success in import and logs failed audit', () => {
-    const result = service.import(
+  it('returns partial success in import and logs failed audit', async () => {
+    const result = await service.import(
       [
         {
           name: 'David',
@@ -108,36 +101,36 @@ describe('AccountsService', () => {
     expect(result.errors[0]).toMatchObject({
       reasonCode: 'ROLE_NOT_FOUND',
     })
-    expect(auditService.list().some((event) => !event.success)).toBe(true)
+    expect((await auditService.list()).some((event) => !event.success)).toBe(true)
   })
 
-  it('validates roleId against dynamic role data source (not hardcoded)', () => {
-    const rolesService = module.get<RolesService>(RolesService)
-    rolesService.create(
+  it('validates roleId against dynamic role data source (not hardcoded)', async () => {
+    const rolesService = moduleRef.get<RolesService>(RolesService)
+    const custom = await rolesService.create(
       { name: 'custom-role', description: '动态角色' },
       'tester',
       'req-custom',
     )
 
-    const account = service.create(
+    const account = await service.create(
       { name: 'Dynamic', email: 'dynamic@test.com', roleId: 'custom-role' },
       'tester',
       'req-dynamic',
     )
-    expect(account.roleId).toBe('custom-role')
+    expect(account.roleId).toBe(custom.id)
   })
 
-  it('rejects disabled role in account creation', () => {
-    const rolesService = module.get<RolesService>(RolesService)
-    const viewer = rolesService.getByName('viewer')!
-    rolesService.disable(viewer.id, 'tester', 'req-dis-viewer')
+  it('rejects disabled role in account creation', async () => {
+    const rolesService = moduleRef.get<RolesService>(RolesService)
+    const viewer = (await rolesService.getByName('viewer'))!
+    await rolesService.disable(viewer.id, 'tester', 'req-dis-viewer')
 
-    expect(() =>
+    await expect(
       service.create(
         { name: 'Fail', email: 'fail@test.com', roleId: 'viewer' },
         'tester',
         'req-fail-disabled',
       ),
-    ).toThrow('角色不存在')
+    ).rejects.toThrow('角色不存在')
   })
 })

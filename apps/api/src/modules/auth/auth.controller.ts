@@ -8,7 +8,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(200)
-  login(@Body() body: LoginInput) {
+  async login(@Body() body: LoginInput) {
     if (!body?.username?.trim() || !body?.password) {
       throw new BadRequestException('用户名和密码不能为空')
     }

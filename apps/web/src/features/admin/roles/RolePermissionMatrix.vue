@@ -28,6 +28,17 @@ const RESOURCE_DEFS: ResourceDef[] = [
       { key: 'import', label: '导入' },
     ],
   },
+  {
+    resource: 'admin.businessUnit',
+    label: '业务板块',
+    actions: [
+      { key: 'read', label: '查看' },
+      { key: 'create', label: '创建' },
+      { key: 'update', label: '编辑' },
+      { key: 'disable', label: '禁用' },
+      { key: 'enable', label: '启用' },
+    ],
+  },
 ]
 
 const props = defineProps<{

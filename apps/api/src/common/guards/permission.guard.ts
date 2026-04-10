@@ -21,7 +21,7 @@ export class PermissionGuard implements CanActivate {
     private readonly rolesService: RolesService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const meta = this.reflector.getAllAndOverride<PermissionMeta | undefined>(
       PERMISSION_KEY,
       [context.getHandler(), context.getClass()],
@@ -35,12 +35,12 @@ export class PermissionGuard implements CanActivate {
       throw new ForbiddenException('缺少身份信息，无法校验权限')
     }
 
-    const role = this.rolesService.getByName(actor.role)
+    const role = await this.rolesService.getByName(actor.role)
     if (!role || role.status !== 'enabled') {
       throw new ForbiddenException('当前角色不存在或已禁用，无权访问')
     }
 
-    if (!this.rolesService.hasPermission(role.id, meta.resource, meta.action)) {
+    if (!this.rolesService.roleAllowsPermission(role, meta.resource, meta.action)) {
       throw new ForbiddenException(
         `无权执行操作 ${meta.resource}.${meta.action}`,
       )

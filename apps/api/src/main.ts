@@ -1,3 +1,5 @@
+import './load-env'
+import 'reflect-metadata'
 import { NestFactory } from '@nestjs/core'
 import { AppModule } from './app.module'
 import { ResponseInterceptor } from './common/interceptors/response.interceptor'

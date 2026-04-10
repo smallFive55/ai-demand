@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common'
+import { InjectRepository } from '@nestjs/typeorm'
 import { randomUUID } from 'crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { dirname, resolve } from 'path'
+import { Repository } from 'typeorm'
+import { AdminRoleEntity } from '../../../database/entities/admin-role.entity'
 import { AuditService } from '../../../modules/audit/audit.service'
 import type { CreateRoleInput, PermissionEntry, Role, UpdateRoleInput } from './roles.types'
 
@@ -13,91 +14,112 @@ const DEFAULT_ROLES: Omit<Role, 'id' | 'createdAt' | 'updatedAt'>[] = [
     permissions: [
       { resource: 'admin.role', actions: ['read', 'manage'], scope: { type: 'all' } },
       { resource: 'admin.account', actions: ['read', 'create', 'update', 'disable', 'import'], scope: { type: 'all' } },
+      {
+        resource: 'admin.businessUnit',
+        actions: ['read', 'create', 'update', 'disable', 'enable'],
+        scope: { type: 'all' },
+      },
     ],
   },
   {
     name: 'manager',
     description: '业务经理，拥有业务数据读写权限',
     status: 'enabled',
-    permissions: [
-      { resource: 'admin.account', actions: ['read'], scope: { type: 'all' } },
-    ],
+    permissions: [{ resource: 'admin.account', actions: ['read'], scope: { type: 'all' } }],
   },
   {
     name: 'viewer',
     description: '只读查看者，仅拥有查看权限',
     status: 'enabled',
-    permissions: [
-      { resource: 'admin.account', actions: ['read'], scope: { type: 'all' } },
-    ],
+    permissions: [{ resource: 'admin.account', actions: ['read'], scope: { type: 'all' } }],
   },
 ]
 
+function roleFromEntity(e: AdminRoleEntity): Role {
+  return {
+    id: e.id,
+    name: e.name,
+    description: e.description,
+    status: e.status,
+    permissions: e.permissions,
+    createdAt: e.createdAt.toISOString(),
+    updatedAt: e.updatedAt.toISOString(),
+  }
+}
+
 @Injectable()
-export class RolesService {
-  private readonly roles = new Map<string, Role>()
-  private readonly dataFile = resolve(
-    process.cwd(),
-    process.env.ROLES_DATA_FILE ?? '.runtime-data/roles.json',
-  )
+export class RolesService implements OnModuleInit {
+  constructor(
+    @InjectRepository(AdminRoleEntity)
+    private readonly roleRepo: Repository<AdminRoleEntity>,
+    private readonly auditService: AuditService,
+  ) {}
 
-  constructor(private readonly auditService: AuditService) {
-    this.loadFromDisk()
-    this.seedDefaults()
+  async onModuleInit(): Promise<void> {
+    await this.seedDefaults()
   }
 
-  list() {
-    return Array.from(this.roles.values()).sort((a, b) =>
-      a.createdAt.localeCompare(b.createdAt),
-    )
+  async list(): Promise<Role[]> {
+    const rows = await this.roleRepo.find({ order: { createdAt: 'ASC' } })
+    return rows.map(roleFromEntity)
   }
 
-  getById(id: string): Role | undefined {
-    return this.roles.get(id)
+  async getById(id: string): Promise<Role | undefined> {
+    const e = await this.roleRepo.findOne({ where: { id } })
+    return e ? roleFromEntity(e) : undefined
   }
 
-  getByName(name: string): Role | undefined {
-    return Array.from(this.roles.values()).find((r) => r.name === name)
+  async getByName(name: string): Promise<Role | undefined> {
+    const e = await this.roleRepo.findOne({ where: { name: name.trim() } })
+    return e ? roleFromEntity(e) : undefined
   }
 
-  exists(id: string): boolean {
-    const role = this.roles.get(id)
+  async exists(id: string): Promise<boolean> {
+    const role = await this.roleRepo.findOne({ where: { id } })
     return !!role && role.status === 'enabled'
   }
 
-  create(input: CreateRoleInput, actor: string, requestId: string): Role {
+  async create(input: CreateRoleInput, actor: string, requestId: string): Promise<Role> {
     try {
-      this.ensureNameUnique(input.name)
+      await this.ensureNameUnique(input.name)
       if (input.permissions) {
         this.validatePermissions(input.permissions)
       }
 
-      const now = new Date().toISOString()
+      const now = new Date()
       const role: Role = {
         id: randomUUID(),
         name: input.name.trim(),
         description: (input.description ?? '').trim(),
         status: 'enabled',
         permissions: input.permissions ?? [],
-        createdAt: now,
-        updatedAt: now,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
       }
 
-      this.roles.set(role.id, role)
-      this.persist()
-      this.auditService.record({
+      await this.roleRepo.save({
+        id: role.id,
+        name: role.name,
+        description: role.description,
+        status: role.status,
+        permissions: role.permissions,
+        createdAt: now,
+        updatedAt: now,
+      })
+
+      await this.auditService.record({
         action: 'create',
         actor,
         target: role.id,
         requestId,
-        occurredAt: now,
+        occurredAt: role.createdAt,
         before: null,
         after: role,
         success: true,
       })
       return role
     } catch (error) {
-      this.auditService.record({
+      await this.auditService.record({
         action: 'create',
         actor,
         target: input.name,
@@ -112,44 +134,50 @@ export class RolesService {
     }
   }
 
-  update(id: string, input: UpdateRoleInput, actor: string, requestId: string): Role {
+  async update(id: string, input: UpdateRoleInput, actor: string, requestId: string): Promise<Role> {
     try {
-      const current = this.roles.get(id)
-      if (!current) {
+      const currentE = await this.roleRepo.findOne({ where: { id } })
+      if (!currentE) {
         throw new NotFoundException('角色不存在')
       }
+      const current = roleFromEntity(currentE)
       if (input.name && input.name !== current.name) {
-        this.ensureNameUnique(input.name)
+        await this.ensureNameUnique(input.name)
       }
       if (input.permissions) {
         this.validatePermissions(input.permissions)
       }
 
       const before = { ...current, permissions: [...current.permissions] }
-      const now = new Date().toISOString()
+      const now = new Date()
       const next: Role = {
         ...current,
         name: input.name?.trim() ?? current.name,
         description: input.description?.trim() ?? current.description,
         permissions: input.permissions ?? current.permissions,
-        updatedAt: now,
+        updatedAt: now.toISOString(),
       }
 
-      this.roles.set(id, next)
-      this.persist()
-      this.auditService.record({
+      await this.roleRepo.update(id, {
+        name: next.name,
+        description: next.description,
+        permissions: next.permissions,
+        updatedAt: now,
+      })
+
+      await this.auditService.record({
         action: 'update',
         actor,
         target: id,
         requestId,
-        occurredAt: now,
+        occurredAt: next.updatedAt,
         before,
         after: next,
         success: true,
       })
       return next
     } catch (error) {
-      this.auditService.record({
+      await this.auditService.record({
         action: 'update',
         actor,
         target: id,
@@ -164,36 +192,36 @@ export class RolesService {
     }
   }
 
-  disable(id: string, actor: string, requestId: string): Role {
+  async disable(id: string, actor: string, requestId: string): Promise<Role> {
     try {
-      const current = this.roles.get(id)
-      if (!current) {
+      const currentE = await this.roleRepo.findOne({ where: { id } })
+      if (!currentE) {
         throw new NotFoundException('角色不存在')
       }
-
+      const current = roleFromEntity(currentE)
       const before = { ...current }
-      const now = new Date().toISOString()
+      const now = new Date()
       const next: Role = {
         ...current,
         status: 'disabled',
-        updatedAt: now,
+        updatedAt: now.toISOString(),
       }
 
-      this.roles.set(id, next)
-      this.persist()
-      this.auditService.record({
+      await this.roleRepo.update(id, { status: 'disabled', updatedAt: now })
+
+      await this.auditService.record({
         action: 'disable',
         actor,
         target: id,
         requestId,
-        occurredAt: now,
+        occurredAt: next.updatedAt,
         before,
         after: next,
         success: true,
       })
       return next
     } catch (error) {
-      this.auditService.record({
+      await this.auditService.record({
         action: 'disable',
         actor,
         target: id,
@@ -208,36 +236,36 @@ export class RolesService {
     }
   }
 
-  enable(id: string, actor: string, requestId: string): Role {
+  async enable(id: string, actor: string, requestId: string): Promise<Role> {
     try {
-      const current = this.roles.get(id)
-      if (!current) {
+      const currentE = await this.roleRepo.findOne({ where: { id } })
+      if (!currentE) {
         throw new NotFoundException('角色不存在')
       }
-
+      const current = roleFromEntity(currentE)
       const before = { ...current }
-      const now = new Date().toISOString()
+      const now = new Date()
       const next: Role = {
         ...current,
         status: 'enabled',
-        updatedAt: now,
+        updatedAt: now.toISOString(),
       }
 
-      this.roles.set(id, next)
-      this.persist()
-      this.auditService.record({
+      await this.roleRepo.update(id, { status: 'enabled', updatedAt: now })
+
+      await this.auditService.record({
         action: 'enable',
         actor,
         target: id,
         requestId,
-        occurredAt: now,
+        occurredAt: next.updatedAt,
         before,
         after: next,
         success: true,
       })
       return next
     } catch (error) {
-      this.auditService.record({
+      await this.auditService.record({
         action: 'enable',
         actor,
         target: id,
@@ -252,42 +280,43 @@ export class RolesService {
     }
   }
 
-  updatePermissions(
+  async updatePermissions(
     id: string,
     permissions: PermissionEntry[],
     actor: string,
     requestId: string,
-  ): Role {
+  ): Promise<Role> {
     try {
-      const current = this.roles.get(id)
-      if (!current) {
+      const currentE = await this.roleRepo.findOne({ where: { id } })
+      if (!currentE) {
         throw new NotFoundException('角色不存在')
       }
+      const current = roleFromEntity(currentE)
       this.validatePermissions(permissions)
 
       const before = { ...current, permissions: [...current.permissions] }
-      const now = new Date().toISOString()
+      const now = new Date()
       const next: Role = {
         ...current,
         permissions,
-        updatedAt: now,
+        updatedAt: now.toISOString(),
       }
 
-      this.roles.set(id, next)
-      this.persist()
-      this.auditService.record({
+      await this.roleRepo.update(id, { permissions, updatedAt: now })
+
+      await this.auditService.record({
         action: 'permission_change',
         actor,
         target: id,
         requestId,
-        occurredAt: now,
+        occurredAt: next.updatedAt,
         before: before.permissions,
         after: next.permissions,
         success: true,
       })
       return next
     } catch (error) {
-      this.auditService.record({
+      await this.auditService.record({
         action: 'permission_change',
         actor,
         target: id,
@@ -302,8 +331,13 @@ export class RolesService {
     }
   }
 
-  hasPermission(roleId: string, resource: string, action: string, scopeCtx?: { type: string; id: string }): boolean {
-    const role = this.roles.get(roleId)
+  /** 基于已加载角色对象校验权限（避免重复查库） */
+  roleAllowsPermission(
+    role: Role,
+    resource: string,
+    action: string,
+    scopeCtx?: { type: string; id: string },
+  ): boolean {
     if (!role || role.status !== 'enabled') return false
 
     return role.permissions.some((entry) => {
@@ -317,12 +351,21 @@ export class RolesService {
     })
   }
 
-  private ensureNameUnique(name: string) {
+  async hasPermission(
+    roleId: string,
+    resource: string,
+    action: string,
+    scopeCtx?: { type: string; id: string },
+  ): Promise<boolean> {
+    const role = await this.getById(roleId)
+    if (!role) return false
+    return this.roleAllowsPermission(role, resource, action, scopeCtx)
+  }
+
+  private async ensureNameUnique(name: string) {
     const trimmed = name.trim()
-    const duplicate = Array.from(this.roles.values()).some(
-      (role) => role.name === trimmed,
-    )
-    if (duplicate) {
+    const existing = await this.roleRepo.findOne({ where: { name: trimmed } })
+    if (existing) {
       throw new BadRequestException('角色名称已存在')
     }
   }
@@ -351,35 +394,21 @@ export class RolesService {
     return 'UNKNOWN_ERROR'
   }
 
-  private seedDefaults() {
-    if (this.roles.size > 0) return
-    const now = new Date().toISOString()
+  private async seedDefaults() {
+    const n = await this.roleRepo.count()
+    if (n > 0) return
+    const now = new Date()
     for (const seed of DEFAULT_ROLES) {
-      const role: Role = {
-        ...seed,
-        id: randomUUID(),
+      const id = randomUUID()
+      await this.roleRepo.save({
+        id,
+        name: seed.name,
+        description: seed.description,
+        status: seed.status,
+        permissions: seed.permissions,
         createdAt: now,
         updatedAt: now,
-      }
-      this.roles.set(role.id, role)
+      })
     }
-    this.persist()
-  }
-
-  private loadFromDisk() {
-    if (!existsSync(this.dataFile)) return
-    const raw = readFileSync(this.dataFile, 'utf8')
-    if (!raw.trim()) return
-    const parsed = JSON.parse(raw) as Role[]
-    parsed.forEach((role) => this.roles.set(role.id, role))
-  }
-
-  private persist() {
-    mkdirSync(dirname(this.dataFile), { recursive: true })
-    writeFileSync(
-      this.dataFile,
-      JSON.stringify(Array.from(this.roles.values()), null, 2),
-      'utf8',
-    )
   }
 }
