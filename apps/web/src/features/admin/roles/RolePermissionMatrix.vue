@@ -134,7 +134,7 @@ defineExpose({ validationErrors })
     <div
       v-for="def in RESOURCE_DEFS"
       :key="def.resource"
-      class="rounded-lg border border-border p-4"
+      class="rounded-lg border border-slate-200 bg-slate-50 p-4"
     >
       <h4 class="mb-3 text-sm font-semibold text-text-primary">{{ def.label }}</h4>
 
@@ -142,7 +142,7 @@ defineExpose({ validationErrors })
         <label
           v-for="act in def.actions"
           :key="act.key"
-          class="flex items-center gap-1.5 text-sm"
+          class="flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
         >
           <input
             type="checkbox"
@@ -156,7 +156,7 @@ defineExpose({ validationErrors })
 
       <div
         v-if="matrix[def.resource]?.actions.size"
-        class="flex flex-wrap items-center gap-3 border-t border-border pt-3"
+        class="flex flex-wrap items-center gap-3 border-t border-slate-200 pt-3"
       >
         <span class="text-xs text-text-muted">权限范围：</span>
         <label class="flex items-center gap-1 text-xs">
@@ -194,7 +194,7 @@ defineExpose({ validationErrors })
           v-if="matrix[def.resource]?.scopeType !== 'all'"
           type="text"
           :value="matrix[def.resource]?.scopeIds"
-          class="ml-2 w-48 rounded border border-border px-2 py-1 text-xs"
+          class="ml-2 w-48 rounded border border-border bg-white px-2 py-1 text-xs"
           :placeholder="matrix[def.resource]?.scopeType === 'project' ? '项目 ID，逗号分隔' : '业务线 ID，逗号分隔'"
           @input="updateScopeIds(def.resource, ($event.target as HTMLInputElement).value)"
         />

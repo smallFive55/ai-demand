@@ -8,21 +8,24 @@ const columns = [
 </script>
 
 <template>
-  <div class="space-y-6">
-    <h1 class="text-xl font-bold text-text-primary">任务看板</h1>
+  <div class="mx-auto max-w-7xl space-y-6">
+    <div>
+      <h1 class="text-2xl font-bold text-text-primary">任务看板</h1>
+      <p class="mt-1 text-sm text-text-muted">按阶段追踪任务执行状态与阻塞项</p>
+    </div>
 
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-4">
       <div
         v-for="col in columns"
         :key="col.id"
-        class="flex flex-col rounded-xl border border-border bg-surface-card"
+        class="min-h-[360px] rounded-xl border border-slate-200/80 bg-slate-100/60 p-4"
       >
-        <div class="flex items-center gap-2 border-b border-border px-4 py-3">
+        <div class="mb-3 flex items-center gap-2">
           <span class="h-2 w-2 rounded-full" :class="col.color" />
-          <h3 class="text-sm font-medium text-text-primary">{{ col.title }}</h3>
-          <span class="ml-auto text-xs text-text-muted">0</span>
+          <h3 class="text-sm font-semibold text-slate-700">{{ col.title }}</h3>
+          <span class="ml-auto rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600">0</span>
         </div>
-        <div class="flex-1 p-3">
+        <div class="flex flex-1 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white p-3">
           <p class="py-8 text-center text-xs text-text-muted">暂无任务</p>
         </div>
       </div>
