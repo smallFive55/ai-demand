@@ -206,11 +206,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto max-w-5xl space-y-6">
+  <div class="mx-auto max-w-7xl space-y-6">
     <div class="flex items-center justify-between">
-      <h1 class="text-xl font-bold text-text-primary">角色管理</h1>
+      <div>
+        <h1 class="text-2xl font-bold text-text-primary">角色管理</h1>
+        <p class="mt-1 text-sm text-text-muted">配置权限矩阵并维护角色状态</p>
+      </div>
       <button
-        class="rounded-lg bg-primary-600 px-3 py-1.5 text-sm text-text-inverse hover:bg-primary-700"
+        class="rounded-md bg-primary-600 px-3 py-2 text-sm text-text-inverse transition hover:bg-primary-700"
         type="button"
         @click="openCreate"
       >
@@ -223,12 +226,12 @@ onMounted(() => {
       {{ actionError }}
     </p>
 
-    <div class="rounded-xl border border-border bg-surface-card p-4">
+    <div class="rounded-xl border border-border bg-white p-4 shadow-card">
       <p v-if="loading" class="text-sm text-text-muted">加载中...</p>
       <p v-else-if="roles.length === 0" class="text-center text-sm text-text-muted">暂无角色数据</p>
       <table v-else class="w-full text-left text-sm">
         <thead>
-          <tr class="text-text-muted">
+          <tr class="text-xs uppercase tracking-wide text-slate-500">
             <th class="py-2">角色名称</th>
             <th class="py-2">描述</th>
             <th class="py-2">权限摘要</th>
@@ -237,7 +240,7 @@ onMounted(() => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="role in roles" :key="role.id" class="border-t border-border">
+          <tr v-for="role in roles" :key="role.id" class="border-t border-border hover:bg-slate-50/80">
             <td class="py-2 font-medium">{{ role.name }}</td>
             <td class="py-2 text-text-secondary">{{ role.description }}</td>
             <td class="max-w-xs truncate py-2 text-xs text-text-muted">
@@ -253,7 +256,7 @@ onMounted(() => {
             <td class="py-2">
               <div class="flex items-center gap-2">
                 <button
-                  class="rounded border border-border px-2 py-1 text-xs text-text-secondary"
+                  class="rounded border border-border px-2 py-1 text-xs text-text-secondary transition hover:bg-slate-50"
                   type="button"
                   @click="openEdit(role)"
                 >
@@ -262,8 +265,8 @@ onMounted(() => {
                 <button
                   :class="
                     role.status === 'enabled'
-                      ? 'rounded border border-danger px-2 py-1 text-xs text-danger'
-                      : 'rounded border border-success px-2 py-1 text-xs text-success'
+                      ? 'rounded border border-danger px-2 py-1 text-xs text-danger transition hover:bg-red-50'
+                      : 'rounded border border-success px-2 py-1 text-xs text-success transition hover:bg-green-50'
                   "
                   type="button"
                   @click="promptToggle(role)"
@@ -280,7 +283,7 @@ onMounted(() => {
     <!-- Drawer -->
     <div
       v-if="isDrawerOpen"
-      class="fixed inset-0 z-50 flex justify-end bg-black/30"
+      class="fixed inset-0 z-50 flex justify-end bg-slate-900/45 backdrop-blur-[1px]"
       role="dialog"
       aria-modal="true"
       aria-label="role-form-drawer"
@@ -288,7 +291,7 @@ onMounted(() => {
       @keydown.escape="isDrawerOpen = false"
       @keydown="trapFocus($event, drawerRef)"
     >
-      <div ref="drawerRef" class="h-full w-full max-w-lg overflow-y-auto bg-white p-5 shadow-modal">
+      <div ref="drawerRef" class="h-full w-full max-w-xl overflow-y-auto bg-white p-5 shadow-modal">
         <div class="mb-4 flex items-center justify-between">
           <h3 class="text-base font-semibold">{{ title }}</h3>
           <button type="button" class="text-sm text-text-muted" @click="isDrawerOpen = false">关闭</button>
@@ -341,7 +344,7 @@ onMounted(() => {
     <!-- Toggle Confirm Dialog -->
     <div
       v-if="confirmToggleId"
-      class="fixed inset-0 z-40 flex items-center justify-center bg-black/30"
+      class="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/45 backdrop-blur-[1px]"
       role="dialog"
       aria-modal="true"
       aria-label="toggle-confirm-dialog"

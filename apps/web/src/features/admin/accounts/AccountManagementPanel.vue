@@ -174,7 +174,7 @@ onMounted(() => {
     <div class="flex items-center justify-between">
       <h2 class="text-base font-semibold text-text-primary">账号列表</h2>
       <button
-        class="rounded-lg bg-primary-600 px-3 py-1.5 text-sm text-text-inverse hover:bg-primary-700"
+        class="rounded-md bg-primary-600 px-3 py-2 text-sm text-text-inverse transition hover:bg-primary-700"
         type="button"
         @click="openCreate"
       >
@@ -187,12 +187,12 @@ onMounted(() => {
       {{ actionError }}
     </p>
 
-    <div class="rounded-xl border border-border bg-surface-card p-4">
+    <div class="rounded-xl border border-border bg-white p-4 shadow-card">
       <p v-if="loading" class="text-sm text-text-muted">加载中...</p>
       <p v-else-if="accounts.length === 0" class="text-sm text-text-muted">暂无账号数据</p>
       <table v-else class="w-full text-left text-sm">
         <thead>
-          <tr class="text-text-muted">
+          <tr class="text-xs uppercase tracking-wide text-slate-500">
             <th class="py-2">姓名</th>
             <th class="py-2">邮箱</th>
             <th class="py-2">角色</th>
@@ -201,7 +201,7 @@ onMounted(() => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="account in accounts" :key="account.id" class="border-t border-border">
+          <tr v-for="account in accounts" :key="account.id" class="border-t border-border hover:bg-slate-50/80">
             <td class="py-2">{{ account.name }}</td>
             <td class="py-2">{{ account.email }}</td>
             <td class="py-2">{{ account.roleId }}</td>
@@ -209,14 +209,14 @@ onMounted(() => {
             <td class="py-2">
               <div class="flex items-center gap-2">
                 <button
-                  class="rounded border border-border px-2 py-1 text-xs text-text-secondary"
+                  class="rounded border border-border px-2 py-1 text-xs text-text-secondary transition hover:bg-slate-50"
                   type="button"
                   @click="openEdit(account)"
                 >
                   编辑
                 </button>
                 <button
-                  class="rounded border border-danger px-2 py-1 text-xs text-danger"
+                  class="rounded border border-danger px-2 py-1 text-xs text-danger transition hover:bg-red-50"
                   type="button"
                   @click="confirmDisableId = account.id"
                 >
@@ -229,16 +229,16 @@ onMounted(() => {
       </table>
     </div>
 
-    <div class="rounded-xl border border-border bg-surface-card p-4">
+    <div class="rounded-xl border border-border bg-white p-4 shadow-card">
       <h3 class="mb-2 text-sm font-semibold text-text-primary">批量导入</h3>
       <textarea
         v-model="importText"
-        class="min-h-28 w-full rounded-lg border border-border p-2 text-sm"
+        class="min-h-28 w-full rounded-lg border border-border bg-slate-50 p-2 text-sm"
         placeholder='请输入 JSON 数组，例如: [{"name":"A","email":"a@x.com","roleId":"viewer"}]'
       />
       <div class="mt-2 flex items-center gap-2">
         <button
-          class="rounded-lg bg-primary-600 px-3 py-1.5 text-sm text-text-inverse hover:bg-primary-700"
+          class="rounded-md bg-primary-600 px-3 py-2 text-sm text-text-inverse transition hover:bg-primary-700"
           type="button"
           @click="submitImport"
         >
@@ -256,7 +256,7 @@ onMounted(() => {
 
     <div
       v-if="isDrawerOpen"
-      class="fixed inset-0 z-50 flex justify-end bg-black/30"
+      class="fixed inset-0 z-50 flex justify-end bg-slate-900/45 backdrop-blur-[1px]"
       role="dialog"
       aria-modal="true"
       aria-label="account-form-drawer"
@@ -291,7 +291,7 @@ onMounted(() => {
             </select>
           </label>
           <button
-            class="w-full rounded-lg bg-primary-600 px-3 py-1.5 text-sm text-text-inverse hover:bg-primary-700"
+            class="w-full rounded-md bg-primary-600 px-3 py-2 text-sm text-text-inverse transition hover:bg-primary-700"
             type="submit"
           >
             {{ mode === 'create' ? '创建' : '保存' }}
@@ -302,7 +302,7 @@ onMounted(() => {
 
     <div
       v-if="confirmDisableId"
-      class="fixed inset-0 z-40 flex items-center justify-center bg-black/30"
+      class="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/45 backdrop-blur-[1px]"
       role="dialog"
       aria-modal="true"
       aria-label="disable-confirm-dialog"
