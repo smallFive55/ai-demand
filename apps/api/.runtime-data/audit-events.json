@@ -1,0 +1,20 @@
+[
+  {
+    "action": "create",
+    "actor": "seed-admin",
+    "target": "d84202f2-3ae4-47a6-8e6c-fd6b8319da94",
+    "requestId": "d2b1372d-38c0-4843-9fb8-7a87ff1b3e3a",
+    "occurredAt": "2026-04-10T00:57:31.446Z",
+    "before": null,
+    "after": {
+      "id": "d84202f2-3ae4-47a6-8e6c-fd6b8319da94",
+      "name": "test",
+      "email": "test@aishang.com",
+      "roleId": "admin",
+      "status": "enabled",
+      "createdAt": "2026-04-10T00:57:31.446Z",
+      "updatedAt": "2026-04-10T00:57:31.446Z"
+    },
+    "success": true
+  }
+]

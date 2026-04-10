@@ -19,6 +19,15 @@ pnpm dev
 前端开发服务器: `http://localhost:5173`
 后端 API 服务器: `http://localhost:8000`
 
+### 管理员登录（开发环境）
+
+- 登录页：`http://localhost:5173/login`
+- 默认账号：`admin`
+- 默认密码：`admin123456`
+
+首次启动后端时会自动初始化管理员账号到 `.runtime-data/admin-users.json`。  
+可通过环境变量 `ADMIN_INIT_USERNAME` / `ADMIN_INIT_PASSWORD` / `ADMIN_INIT_DISPLAY_NAME` 覆盖默认值。
+
 ## 常用脚本
 
 | 命令 | 说明 |

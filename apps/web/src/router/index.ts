@@ -1,7 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 const routes: RouteRecordRaw[] = [
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('@/views/LoginView.vue'),
+    meta: { title: '登录', public: true },
+  },
   {
     path: '/',
     name: 'dashboard',
@@ -103,8 +110,20 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
+  const authStore = useAuthStore()
+  authStore.ensureUserFromToken()
+
+  if (to.meta.public) {
+    return true
+  }
+
+  if (to.meta.requiresAdmin && (!authStore.isAuthenticated || !authStore.isAdmin)) {
+    return { path: '/login', query: { redirect: to.fullPath } }
+  }
+
   const title = (to.meta.title as string) ?? '需求全流程管理系统'
   document.title = `${title} - 需求全流程管理系统`
+  return true
 })
 
 export default router

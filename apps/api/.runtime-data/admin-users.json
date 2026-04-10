@@ -1,0 +1,13 @@
+[
+  {
+    "id": "seed-admin",
+    "username": "admin",
+    "displayName": "系统管理员",
+    "role": "admin",
+    "status": "enabled",
+    "passwordHash": "7700aab71d84f21d8e606a8259f4aa973392a99a48d5180c5bf301f2679a26c13f17d439f0df7c801e0335a26505f0c972adb190b11da8bfde2c310fd67af73a",
+    "passwordSalt": "ac8983fd-b0f8-4f18-b67e-052ce7bea049",
+    "createdAt": "2026-04-10T00:47:36.242Z",
+    "updatedAt": "2026-04-10T00:47:36.242Z"
+  }
+]
