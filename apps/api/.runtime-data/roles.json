@@ -1,0 +1,73 @@
+[
+  {
+    "name": "admin",
+    "description": "系统管理员，拥有全部管理权限",
+    "status": "enabled",
+    "permissions": [
+      {
+        "resource": "admin.role",
+        "actions": [
+          "read",
+          "manage"
+        ],
+        "scope": {
+          "type": "all"
+        }
+      },
+      {
+        "resource": "admin.account",
+        "actions": [
+          "read",
+          "create",
+          "update",
+          "disable",
+          "import"
+        ],
+        "scope": {
+          "type": "all"
+        }
+      }
+    ],
+    "id": "ee48d22a-8175-4278-88b1-b87fa838169b",
+    "createdAt": "2026-04-10T00:47:36.297Z",
+    "updatedAt": "2026-04-10T00:47:36.297Z"
+  },
+  {
+    "name": "manager",
+    "description": "业务经理，拥有业务数据读写权限",
+    "status": "enabled",
+    "permissions": [
+      {
+        "resource": "admin.account",
+        "actions": [
+          "read"
+        ],
+        "scope": {
+          "type": "all"
+        }
+      }
+    ],
+    "id": "d55d97ca-9894-436d-8352-faa34ba4cf16",
+    "createdAt": "2026-04-10T00:47:36.297Z",
+    "updatedAt": "2026-04-10T00:47:36.297Z"
+  },
+  {
+    "name": "viewer",
+    "description": "只读查看者，仅拥有查看权限",
+    "status": "enabled",
+    "permissions": [
+      {
+        "resource": "admin.account",
+        "actions": [
+          "read"
+        ],
+        "scope": {
+          "type": "all"
+        }
+      }
+    ],
+    "id": "f6267c38-9f13-4f75-8b11-0816cd1b92dc",
+    "createdAt": "2026-04-10T00:47:36.297Z",
+    "updatedAt": "2026-04-10T00:47:36.297Z"
+  }
+]

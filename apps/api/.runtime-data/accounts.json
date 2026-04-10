@@ -1,0 +1,11 @@
+[
+  {
+    "id": "d84202f2-3ae4-47a6-8e6c-fd6b8319da94",
+    "name": "test",
+    "email": "test@aishang.com",
+    "roleId": "admin",
+    "status": "enabled",
+    "createdAt": "2026-04-10T00:57:31.446Z",
+    "updatedAt": "2026-04-10T00:57:31.446Z"
+  }
+]
