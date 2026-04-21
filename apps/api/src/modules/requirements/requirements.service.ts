@@ -6,6 +6,7 @@ import {
   GatewayTimeoutException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common'
@@ -18,6 +19,7 @@ import type { RequestWithActor } from '../../common/guards/admin-auth.guard'
 import { AuditService } from '../audit/audit.service'
 import { BusinessUnitsService } from '../admin/business-units/business-units.service'
 import type { BizUnit } from '../admin/business-units/business-units.types'
+import { NotificationsService } from '../notifications/notifications.service'
 import { LLM_CHAT, LlmChatPort, type IntakeSuggestion, type LlmChatTurn } from './llm/llm-chat.port'
 
 const REQUIREMENT_STATUSES = {
@@ -97,6 +99,8 @@ function mapMessage(e: RequirementMessageEntity) {
 
 @Injectable()
 export class RequirementsService {
+  private readonly logger = new Logger(RequirementsService.name)
+
   constructor(
     @InjectRepository(RequirementEntity)
     private readonly reqRepo: Repository<RequirementEntity>,
@@ -106,6 +110,7 @@ export class RequirementsService {
     private readonly snapRepo: Repository<RequirementFieldSnapshotEntity>,
     private readonly auditService: AuditService,
     private readonly businessUnitsService: BusinessUnitsService,
+    private readonly notificationsService: NotificationsService,
     @Inject(LLM_CHAT) private readonly llm: LlmChatPort,
   ) {}
 
@@ -543,9 +548,16 @@ export class RequirementsService {
   }
 
   /**
-   * 单点封装 collecting → abandoned (Story 2.3 Task 1)。
-   * 遵循 2.2 模式：统一状态迁移、审计记录、仅提交者可操作、仅 collecting 阶段。
-   * 历史消息、字段快照保持不变（不删除），满足 AC2 可追溯要求。
+   * 单点封装 collecting → abandoned (Story 2.3 Task 1/3)。
+   *
+   * - 原子状态迁移：条件 UPDATE (`WHERE status='collecting'`)，并发双提交只会命中一次。
+   * - 历史消息、字段快照不删除，满足 AC2 可追溯。
+   * - 通知闭环（AC4/AC5 / NFR-07）通过 `scheduleAbandonNotification` **异步**发起（fire-and-forget）：
+   *   - 不阻塞 HTTP 响应；NotificationsService 内部处理重试 + 降级 + 审计
+   *   - 出现不可预期异常时由此兜底写审计，主流程不受影响
+   *
+   * 返回值：`true` 表示本次确实执行了迁移；`false` 表示并发情况下未命中条件（已被其他调用处理），
+   * 调用方可据此决定是否跳过后续副作用。
    */
   private async applyCollectingToAbandoned(
     requirementId: string,
@@ -553,72 +565,143 @@ export class RequirementsService {
     actor: { id: string },
     requestId: string,
     reason = '用户主动放弃',
-  ): Promise<void> {
+  ): Promise<boolean> {
     const now = new Date()
-    await this.reqRepo.update(requirementId, {
-      status: REQUIREMENT_STATUSES.ABANDONED,
-      updatedAt: now,
-    })
+    const occurredAtIso = toIso(now)
+
+    // 条件 UPDATE：借助数据库保证只有一次迁移成功（M5 防并发）。
+    const updateResult = await this.reqRepo.update(
+      { id: requirementId, status: REQUIREMENT_STATUSES.COLLECTING },
+      { status: REQUIREMENT_STATUSES.ABANDONED, updatedAt: now },
+    )
+    const affected =
+      typeof updateResult.affected === 'number' ? updateResult.affected : Number(updateResult.affected ?? 0)
+    if (affected < 1) {
+      return false
+    }
 
     await this.auditService.record({
       action: 'requirement_status_change',
       actor: actor.id,
       target: requirementId,
       requestId,
-      occurredAt: toIso(now),
+      occurredAt: occurredAtIso,
       before: { status: previous.status },
       after: { status: REQUIREMENT_STATUSES.ABANDONED, reason },
       success: true,
     })
 
-    // Auto-fix: Dedicated notification trigger event (satisfies AC4/AC5, NFR-07)
-    await this.auditService.record({
-      action: 'requirement_abandoned',
+    // H1 修复：异步解耦 —— 不 await，避免让 HTTP 响应被重试/退避阻塞到 15+s。
+    this.scheduleAbandonNotification({
+      requirementId,
+      requirementTitle: previous.title,
+      reason,
+      recipientId: previous.submitterId,
       actor: actor.id,
-      target: requirementId,
       requestId,
-      occurredAt: toIso(now),
-      before: { status: previous.status },
-      after: {
-        status: REQUIREMENT_STATUSES.ABANDONED,
-        reason,
-        notification: {
-          type: 'wecom',
-          deepLinkParams: {
-            requirementId,
-            step: 'abandon',
-            actionId: randomUUID().slice(0, 8),
-            source: 'wecom',
-          },
-          retry: true,
-          fallback: 'in-app-todo',
-        },
-      },
-      success: true,
+      occurredAt: occurredAtIso,
     })
 
-    // FIXED (Code Review + Auto-fix): Published `requirement_abandoned` audit event with full metadata for notification trigger.
-    // Includes deep link contract: requirementId, step='abandon', actionId, source=wecom.
-    // This satisfies AC4 (notification trigger with deep link), AC5 (retry/audit/traceability via AuditService).
-    // Full WeCom sending, retry logic, downgrade to in-app todo and NFR-07 decoupling will be implemented in dedicated notifications module (next iteration or Story 2.4).
-    // Event follows `domain.entity.action.v1` pattern (`requirement.status.abandoned.v1` intent recorded in audit).
-    // History, snapshots and audit trail fully preserved - no data deletion.
+    return true
   }
 
   /**
-   * 公开单点放弃方法 (Story 2.3 Task 1, fixed in code review)。
+   * 以 fire-and-forget 方式调度放弃通知。
+   * 注意：
+   * - NotificationsService 设计上不抛（重试与降级内部处理）；此处 catch 仅兜底不可预期异常。
+   * - 不返回 Promise，调用方无法 await，确保"异步解耦"承诺不被破坏。
+   * - 通过 `notificationsService.track()` 注册在飞 Promise，供 `onApplicationShutdown` 排空。
+   * - 子类可覆盖以接入事件总线 / 队列实现（当前实现足以满足 NFR-07 解耦语义）。
+   *
+   * HIGH-3：`mentionedWecomUserIds` 目前为空数组（尚无 <内部 userId → 企微 userid> 映射表），
+   *         NotificationsService 会在审计中显式标记 `recipientTargeting: 'group_broadcast'`。
+   */
+  protected scheduleAbandonNotification(input: {
+    requirementId: string
+    requirementTitle: string
+    reason: string
+    recipientId: string
+    actor: string
+    requestId: string
+    occurredAt: string
+  }): void {
+    const task = Promise.resolve()
+      .then(() =>
+        this.notificationsService.notifyRequirementAbandoned({
+          ...input,
+          mentionedWecomUserIds: [],
+        }),
+      )
+      .catch(async (err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err)
+        // MEDIUM-5：通知编排器本身崩溃属于系统级异常，必须落日志 + 审计，不得静默
+        this.logger.error(
+          `[notify] orchestrator unexpected failure requirement=${input.requirementId} request=${input.requestId} err=${msg}`,
+        )
+        try {
+          await this.auditService.record({
+            action: 'requirement_abandoned',
+            actor: input.actor,
+            target: input.requirementId,
+            requestId: input.requestId,
+            occurredAt: input.occurredAt,
+            before: null,
+            after: { unexpectedError: msg, attemptedAt: new Date().toISOString() },
+            success: false,
+            reasonCode: 'notification_orchestrator_unexpected',
+          })
+        } catch (auditErr: unknown) {
+          const auditMsg = auditErr instanceof Error ? auditErr.message : String(auditErr)
+          this.logger.error(
+            `[notify] audit record itself failed requirement=${input.requirementId} err=${auditMsg}`,
+          )
+        }
+      })
+    void this.notificationsService.track(task)
+  }
+
+  /** 放弃原因的最大长度（写入审计 after_data；超过则拒绝，防止放大攻击）。 */
+  private static readonly ABANDON_REASON_MAX_LENGTH = 500
+
+  /**
+   * 规范化并校验可选的放弃原因（Story 2.3 code-review HIGH-3）。
+   * - 非字符串 → 400（避免未定义 toString 行为污染审计）
+   * - 超长 → 400（阻断写入 audit 的放大攻击面）
+   * - 空/全空白 → 降级为默认文案
+   */
+  private normalizeAbandonReason(raw: unknown): string {
+    if (raw === undefined || raw === null) return '用户主动放弃'
+    if (typeof raw !== 'string') {
+      throw new BadRequestException(
+        '问题：放弃原因格式不正确。原因：reason 字段必须为字符串。下一步：请以字符串形式提交原因或留空。',
+      )
+    }
+    const trimmed = raw.trim()
+    if (!trimmed) return '用户主动放弃'
+    if (trimmed.length > RequirementsService.ABANDON_REASON_MAX_LENGTH) {
+      throw new BadRequestException(
+        `问题：放弃原因过长。原因：单条原因不得超过 ${RequirementsService.ABANDON_REASON_MAX_LENGTH} 字符。下一步：请精简后重试。`,
+      )
+    }
+    return trimmed
+  }
+
+  /**
+   * 公开单点放弃方法 (Story 2.3 Task 1, hardened in code review)。
    * 控制器应调用此方法而非直接 update status。
    * 满足 AC1-3,6: 权限、状态守卫、审计、可追溯、错误信封。
-   * AC4/5 notification stub enhanced with clear event intent for decoupled WeCom (deep link contract per architecture).
+   * AC4/5 通知闭环由 NotificationsService 异步发起（fire-and-forget）。
    */
   async abandonRequirement(
     id: string,
     actor: RequestWithActor['actor'],
     requestId: string,
-    reason?: string,
+    reason?: unknown,
   ) {
     this.assertBusinessActor(actor)
     if (!actor) throw new ForbiddenException('未授权')
+
+    const normalizedReason = this.normalizeAbandonReason(reason)
 
     const row = await this.reqRepo.findOne({ where: { id } })
     if (!row) {
@@ -635,7 +718,27 @@ export class RequirementsService {
       )
     }
 
-    await this.applyCollectingToAbandoned(id, row, actor, requestId, reason || '用户主动放弃')
+    const migrated = await this.applyCollectingToAbandoned(
+      id,
+      row,
+      actor,
+      requestId,
+      normalizedReason,
+    )
+    if (!migrated) {
+      // 并发/幂等：另一请求已完成迁移；重新读取并原样返回当前状态，不再重复副作用。
+      await this.auditService.record({
+        action: 'requirement_status_change',
+        actor: actor.id,
+        target: id,
+        requestId,
+        occurredAt: new Date().toISOString(),
+        before: { status: row.status },
+        after: { status: REQUIREMENT_STATUSES.ABANDONED, reason: normalizedReason },
+        success: false,
+        reasonCode: 'abandon_concurrent_no_op',
+      })
+    }
 
     return this.getById(id, actor, requestId)
   }

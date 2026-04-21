@@ -5,6 +5,7 @@ import { RequirementMessageEntity } from '../../database/entities/requirement-me
 import { RequirementEntity } from '../../database/entities/requirement.entity'
 import { AuditModule } from '../audit/audit.module'
 import { BusinessUnitsModule } from '../admin/business-units/business-units.module'
+import { NotificationsModule } from '../notifications/notifications.module'
 import { EchoLlmChatService } from './llm/echo-llm-chat.service'
 import { HttpLlmChatService } from './llm/http-llm-chat.service'
 import { LLM_CHAT, LlmChatPort } from './llm/llm-chat.port'
@@ -21,6 +22,7 @@ import { RequirementsService } from './requirements.service'
     ]),
     AuditModule,
     BusinessUnitsModule,
+    NotificationsModule,
   ],
   controllers: [RequirementsController, IntakeBusinessUnitsController],
   providers: [

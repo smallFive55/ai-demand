@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { randomUUID } from 'crypto'
+import type { AbandonRequirementPayload } from '@ai-demand/contracts'
 import { AdminAuthGuard, type RequestWithActor } from '../../common/guards/admin-auth.guard'
 import { RequirementsService } from './requirements.service'
 
@@ -90,7 +91,7 @@ export class RequirementsController {
   @HttpCode(200)
   async abandon(
     @Param('id') id: string,
-    @Body() body: { reason?: string } = {},
+    @Body() body: AbandonRequirementPayload = {},
     @Req() request: RequestWithActor,
     @Headers('x-request-id') requestIdHeader?: string,
   ) {

@@ -14,6 +14,7 @@ describe('RequirementsController', () => {
     listFieldSnapshots: jest.fn(),
     appendMessage: jest.fn(),
     patchIntake: jest.fn(),
+    abandonRequirement: jest.fn(),
   }
 
   beforeEach(async () => {
@@ -56,5 +57,53 @@ describe('RequirementsController', () => {
       controller.patchIntake('rid-1', { businessUnitId: 'bu-9' }, req, 'hdr-p'),
     ).resolves.toEqual({ id: 'rid-1' })
     expect(mockService.patchIntake).toHaveBeenCalledWith('rid-1', 'bu-9', req.actor, 'hdr-p')
+  })
+
+  describe('abandon (Story 2.3)', () => {
+    const req = {
+      actor: { id: 'biz-1', role: 'business' as const },
+    } as RequestWithActor
+
+    it('delegates to service with reason from AbandonRequirementPayload body', async () => {
+      mockService.abandonRequirement.mockResolvedValue({ id: 'rid-a', status: 'abandoned' })
+      await expect(
+        controller.abandon('rid-a', { reason: '业务优先级调整' }, req, 'hdr-a'),
+      ).resolves.toEqual({ id: 'rid-a', status: 'abandoned' })
+      expect(mockService.abandonRequirement).toHaveBeenCalledWith(
+        'rid-a',
+        req.actor,
+        'hdr-a',
+        '业务优先级调整',
+      )
+    })
+
+    it('tolerates missing body (defaults to {}) and passes reason as undefined', async () => {
+      mockService.abandonRequirement.mockResolvedValue({ id: 'rid-b' })
+      // Call with body explicitly undefined to exercise default param
+      await expect(
+        controller.abandon('rid-b', undefined as unknown as never, req, 'hdr-b'),
+      ).resolves.toEqual({ id: 'rid-b' })
+      expect(mockService.abandonRequirement).toHaveBeenCalledWith(
+        'rid-b',
+        req.actor,
+        'hdr-b',
+        undefined,
+      )
+    })
+
+    it('generates requestId when x-request-id header is missing', async () => {
+      mockService.abandonRequirement.mockResolvedValue({ id: 'rid-c' })
+      await controller.abandon('rid-c', {}, req)
+      const generatedReqId = mockService.abandonRequirement.mock.calls[0][2]
+      expect(typeof generatedReqId).toBe('string')
+      expect(generatedReqId.length).toBeGreaterThan(0)
+    })
+
+    it('propagates service ForbiddenException (non-submitter)', async () => {
+      mockService.abandonRequirement.mockRejectedValue(new ForbiddenException('非提交者'))
+      await expect(
+        controller.abandon('rid-d', {}, req, 'hdr-d'),
+      ).rejects.toBeInstanceOf(ForbiddenException)
+    })
   })
 })

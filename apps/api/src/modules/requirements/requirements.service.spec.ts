@@ -12,6 +12,7 @@ import { RequirementMessageEntity } from '../../database/entities/requirement-me
 import { RequirementEntity } from '../../database/entities/requirement.entity'
 import { BusinessUnitsService } from '../admin/business-units/business-units.service'
 import { AuditService } from '../audit/audit.service'
+import { NotificationsService } from '../notifications/notifications.service'
 import { LLM_CHAT } from './llm/llm-chat.port'
 import { RequirementsService } from './requirements.service'
 
@@ -60,6 +61,14 @@ describe('RequirementsService', () => {
   const mockBu = {
     listEnabled: jest.fn().mockResolvedValue([]),
   }
+  const mockNotifications = {
+    notifyRequirementAbandoned: jest.fn().mockResolvedValue({
+      success: true,
+      attempts: 1,
+      fallbackTriggered: false,
+    }),
+    track: jest.fn(<T,>(p: Promise<T>): Promise<T> => p),
+  }
 
   beforeEach(async () => {
     jest.clearAllMocks()
@@ -84,6 +93,7 @@ describe('RequirementsService', () => {
         { provide: getRepositoryToken(RequirementFieldSnapshotEntity), useValue: mockSnapRepo },
         { provide: AuditService, useValue: mockAudit },
         { provide: BusinessUnitsService, useValue: mockBu },
+        { provide: NotificationsService, useValue: mockNotifications },
         { provide: LLM_CHAT, useValue: mockLlm },
       ],
     }).compile()
@@ -518,66 +528,168 @@ describe('RequirementsService', () => {
   describe('abandonRequirement (Story 2.3)', () => {
     const reqId = 'abandon-req-1'
     const actor = { id: 'biz-b', role: 'business' as const }
-    const otherActor = { id: 'other-biz', role: 'business' as const }
     const reqId2 = 'abandon-req-2'
+
+    /** 刷新 microtask 队列，便于观察 fire-and-forget 的副作用（通知调度） */
+    const flushMicrotasks = async () => {
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
 
     it('allows submitter to abandon a collecting requirement and records audit', async () => {
       mockReqRepo.findOne.mockResolvedValueOnce(
-        reqEntity({ id: reqId, submitterId: actor.id, status: 'collecting' })
+        reqEntity({ id: reqId, submitterId: actor.id, status: 'collecting', title: '活动自动化' }),
       )
       mockReqRepo.update.mockResolvedValue({ affected: 1 })
       mockReqRepo.findOne.mockResolvedValueOnce(
-        reqEntity({ id: reqId, submitterId: actor.id, status: 'abandoned' })
+        reqEntity({ id: reqId, submitterId: actor.id, status: 'abandoned' }),
       )
 
-      const result = await service.abandonRequirement(reqId, actor, 'req-123')
+      const result = await service.abandonRequirement(reqId, actor, 'req-123', '业务方主动关闭')
+      await flushMicrotasks()
 
       expect(result.status).toBe('abandoned')
+      // M5：条件 UPDATE（criteria 含 status=collecting）
       expect(mockReqRepo.update).toHaveBeenCalledWith(
-        reqId,
-        expect.objectContaining({ status: 'abandoned' })
+        expect.objectContaining({ id: reqId, status: 'collecting' }),
+        expect.objectContaining({ status: 'abandoned' }),
       )
       expect(mockAudit.record).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'requirement_status_change',
           actor: actor.id,
           target: reqId,
-          after: expect.objectContaining({ status: 'abandoned' }),
-        })
+          after: expect.objectContaining({ status: 'abandoned', reason: '业务方主动关闭' }),
+        }),
       )
+      expect(mockNotifications.notifyRequirementAbandoned).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requirementId: reqId,
+          requirementTitle: '活动自动化',
+          reason: '业务方主动关闭',
+          recipientId: actor.id,
+          actor: actor.id,
+          requestId: 'req-123',
+        }),
+      )
+    })
+
+    it('does not break main flow when notification orchestrator unexpectedly throws (fire-and-forget)', async () => {
+      mockReqRepo.findOne.mockResolvedValueOnce(
+        reqEntity({ id: reqId, submitterId: actor.id, status: 'collecting' }),
+      )
+      mockReqRepo.update.mockResolvedValue({ affected: 1 })
+      mockReqRepo.findOne.mockResolvedValueOnce(
+        reqEntity({ id: reqId, submitterId: actor.id, status: 'abandoned' }),
+      )
+      mockNotifications.notifyRequirementAbandoned.mockRejectedValueOnce(
+        new Error('orchestrator down'),
+      )
+
+      const result = await service.abandonRequirement(reqId, actor, 'req-xyz')
+      // 主流程响应时通知异常尚未被捕获，需要等 microtask 队列排空
+      await flushMicrotasks()
+
+      expect(result.status).toBe('abandoned')
+      expect(mockAudit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'requirement_abandoned',
+          success: false,
+          reasonCode: 'notification_orchestrator_unexpected',
+        }),
+      )
+    })
+
+    it('does not await notifications in main flow (HIGH-1: async decoupling)', async () => {
+      mockReqRepo.findOne.mockResolvedValueOnce(
+        reqEntity({ id: reqId, submitterId: actor.id, status: 'collecting' }),
+      )
+      mockReqRepo.update.mockResolvedValue({ affected: 1 })
+      mockReqRepo.findOne.mockResolvedValueOnce(
+        reqEntity({ id: reqId, submitterId: actor.id, status: 'abandoned' }),
+      )
+      // 通知挂起 10 秒不返回——主流程必须在该 Promise 之前返回
+      let resolveNotify!: () => void
+      mockNotifications.notifyRequirementAbandoned.mockReturnValueOnce(
+        new Promise<void>((r) => {
+          resolveNotify = r
+        }),
+      )
+
+      const start = Date.now()
+      const result = await service.abandonRequirement(reqId, actor, 'req-async')
+      const elapsed = Date.now() - start
+
+      expect(result.status).toBe('abandoned')
+      expect(elapsed).toBeLessThan(500)
+      resolveNotify()
     })
 
     it('rejects non-submitter from abandoning', async () => {
       mockReqRepo.findOne.mockResolvedValue(
-        reqEntity({ id: reqId2, submitterId: 'other-id', status: 'collecting' })
+        reqEntity({ id: reqId2, submitterId: 'other-id', status: 'collecting' }),
       )
 
-      await expect(
-        service.abandonRequirement(reqId2, actor, 'req-456')
-      ).rejects.toThrow(ForbiddenException)
+      await expect(service.abandonRequirement(reqId2, actor, 'req-456')).rejects.toThrow(
+        ForbiddenException,
+      )
     })
 
     it('rejects abandon when status is not collecting', async () => {
       mockReqRepo.findOne.mockResolvedValue(
-        reqEntity({ id: reqId, submitterId: actor.id, status: 'received' })
+        reqEntity({ id: reqId, submitterId: actor.id, status: 'received' }),
       )
 
+      await expect(service.abandonRequirement(reqId, actor, 'req-789')).rejects.toThrow(
+        BadRequestException,
+      )
+    })
+
+    it('rejects non-string reason (HIGH-3: input validation)', async () => {
       await expect(
-        service.abandonRequirement(reqId, actor, 'req-789')
-      ).rejects.toThrow(BadRequestException)
+        service.abandonRequirement(reqId, actor, 'req-x', 123 as unknown as string),
+      ).rejects.toBeInstanceOf(BadRequestException)
+    })
+
+    it('rejects over-long reason (HIGH-3: input validation)', async () => {
+      await expect(
+        service.abandonRequirement(reqId, actor, 'req-x', 'x'.repeat(501)),
+      ).rejects.toBeInstanceOf(BadRequestException)
+    })
+
+    it('is idempotent under concurrent abandon (M5: conditional UPDATE miss)', async () => {
+      mockReqRepo.findOne.mockResolvedValueOnce(
+        reqEntity({ id: reqId, submitterId: actor.id, status: 'collecting' }),
+      )
+      // 并发：条件 UPDATE 未命中 → affected = 0
+      mockReqRepo.update.mockResolvedValueOnce({ affected: 0 })
+      mockReqRepo.findOne.mockResolvedValueOnce(
+        reqEntity({ id: reqId, submitterId: actor.id, status: 'abandoned' }),
+      )
+
+      const result = await service.abandonRequirement(reqId, actor, 'req-concurrent')
+      await flushMicrotasks()
+
+      expect(result.status).toBe('abandoned')
+      // 通知不应发送（防止重复推送）
+      expect(mockNotifications.notifyRequirementAbandoned).not.toHaveBeenCalled()
+      expect(mockAudit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'requirement_status_change',
+          success: false,
+          reasonCode: 'abandon_concurrent_no_op',
+        }),
+      )
     })
 
     it('throws specific error for appendMessage on abandoned requirement (AC3)', async () => {
       mockReqRepo.findOne.mockResolvedValue(
-        reqEntity({ id: reqId, submitterId: actor.id, status: 'abandoned' })
+        reqEntity({ id: reqId, submitterId: actor.id, status: 'abandoned' }),
       )
 
-      await expect(
-        service.appendMessage(reqId, 'test message', actor, 'req-999')
-      ).rejects.toThrow(
+      await expect(service.appendMessage(reqId, 'test message', actor, 'req-999')).rejects.toThrow(
         expect.objectContaining({
           message: expect.stringContaining('该需求已放弃'),
-        })
+        }),
       )
     })
   })

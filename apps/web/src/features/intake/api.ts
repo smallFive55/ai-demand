@@ -1,5 +1,6 @@
 import { api } from '@/api/client'
 import type {
+  AbandonRequirementPayload,
   AppendRequirementMessagePayload,
   AppendRequirementMessageResponse,
   EnabledBusinessUnitSummary,
@@ -30,4 +31,7 @@ export const intakeApi = {
 
   patchIntake: (id: string, payload: PatchRequirementIntakePayload) =>
     api.patch<Requirement>(`${base}/${id}/intake`, payload),
+
+  abandonRequirement: (id: string, payload: AbandonRequirementPayload = {}) =>
+    api.patch<Requirement>(`${base}/${id}/abandon`, payload),
 }

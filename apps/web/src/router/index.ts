@@ -57,6 +57,17 @@ const routes: RouteRecordRaw[] = [
     ],
   },
 
+  // ── 通知深链契约（架构 `architecture.md:104`）──
+  // `/{role}/approvals?requirementId=&step=&actionId=&source=wecom` 是通知服务的统一深链形态。
+  // 当前 Story 2.3 的放弃事件只面向业务方提交者（informational，非审批上下文），
+  // 落地到已有的 RequirementChatView；后续实现独立 BusinessApprovalsView 时替换此组件。
+  {
+    path: '/business/approvals',
+    name: 'business-approvals',
+    component: () => import('@/views/requirement/RequirementChatView.vue'),
+    meta: { title: '我的通知' },
+  },
+
   // ── 任务管理 ──
   {
     path: '/task',

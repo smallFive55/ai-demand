@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { PaperAirplaneIcon } from '@heroicons/vue/24/solid'
 import { ApiError } from '@/api/client'
 import { intakeApi } from '@/features/intake/api'
@@ -10,6 +10,7 @@ import type { EnabledBusinessUnitSummary, RequirementMessage } from '@ai-demand/
 import { STATUS_LABEL } from '@/types/requirement'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const requirementStore = useRequirementStore()
 
@@ -26,6 +27,12 @@ const intakeError = ref('')
 const savingIntake = ref(false)
 const enabledUnits = ref<EnabledBusinessUnitSummary[]>([])
 const selectedBusinessUnitId = ref('')
+
+const abandonConfirmOpen = ref(false)
+const abandonReason = ref('')
+const abandoning = ref(false)
+const abandonError = ref('')
+const deepLinkHint = ref('')
 
 function formatGuidedError(problem: string, reason: string, nextStep: string) {
   return `${problem} ${reason} ${nextStep}`
@@ -118,6 +125,10 @@ function renderMarkdown(raw: string): string {
 const currentStatus = computed(() => requirementStore.currentRequirement?.status)
 const isReceived = computed(() => currentStatus.value === 'received')
 const isCollecting = computed(() => currentStatus.value === 'collecting')
+const isAbandoned = computed(() => currentStatus.value === 'abandoned')
+const canAbandon = computed(
+  () => authStore.isBusiness && !!requirementId.value && isCollecting.value && !abandoning.value,
+)
 
 const canSend = computed(
   () =>
@@ -125,7 +136,8 @@ const canSend = computed(
     !sending.value &&
     !!requirementId.value &&
     !pageLoading.value &&
-    isCollecting.value,
+    isCollecting.value &&
+    !abandoning.value,
 )
 
 const admission = computed(() => requirementStore.currentRequirement?.admissionAssessment)
@@ -169,6 +181,21 @@ async function createSessionAndLoad() {
   await loadEnabledUnits()
 }
 
+function readDeepLinkRequirementId(): string | null {
+  const raw = route.query.requirementId
+  const id = Array.isArray(raw) ? raw[0] : raw
+  if (typeof id === 'string' && id.trim().length > 0) return id.trim()
+  return null
+}
+
+async function loadExistingRequirement(id: string): Promise<void> {
+  messages.value = await intakeApi.listMessages(id)
+  requirementId.value = id
+  sessionStorage.setItem(STORAGE_KEY, id)
+  await requirementStore.fetchRequirement(id)
+  await loadEnabledUnits()
+}
+
 async function bootstrap() {
   pageLoading.value = true
   pageError.value = ''
@@ -188,13 +215,44 @@ async function bootstrap() {
   }
 
   try {
+    // 企微深链优先：?requirementId=...&step=abandon&source=wecom → 直接定位历史需求（只读回放）
+    const deepLinkId = readDeepLinkRequirementId()
+    if (deepLinkId) {
+      try {
+        await loadExistingRequirement(deepLinkId)
+        const step = Array.isArray(route.query.step) ? route.query.step[0] : route.query.step
+        // H4：仅当 step=abandon **且** 需求真实状态为 abandoned 时才展示"已放弃"文案，
+        //     否则（状态未同步 / 链接过期 / 被篡改）使用中性提示，避免误导用户。
+        if (step === 'abandon') {
+          if (isAbandoned.value) {
+            deepLinkHint.value =
+              '问题：该需求已通过企业微信通知标记为「已放弃」。 原因：业务方在对话中确认放弃。 下一步：如需重新提交，请点击「新建会话」。'
+          } else {
+            deepLinkHint.value =
+              '问题：无法确认放弃状态。 原因：链接声明为放弃通知，但需求当前状态并非「已放弃」，可能已被恢复或链接已过期。 下一步：请以当前状态为准，或从需求列表查看最新进展。'
+          }
+        }
+        pageLoading.value = false
+        return
+      } catch (e) {
+        // 深链失败回退到常规流程；不直接报错阻塞
+        pageError.value =
+          e instanceof ApiError
+            ? e.message
+            : formatGuidedError(
+                '问题：无法打开深链对应的需求。',
+                '原因：需求不存在或无访问权限。',
+                '下一步：请回到需求列表或从「发起需求」重新创建。',
+              )
+        pageLoading.value = false
+        return
+      }
+    }
+
     const stored = sessionStorage.getItem(STORAGE_KEY)
     if (stored) {
       try {
-        messages.value = await intakeApi.listMessages(stored)
-        requirementId.value = stored
-        await requirementStore.fetchRequirement(stored)
-        await loadEnabledUnits()
+        await loadExistingRequirement(stored)
         pageLoading.value = false
         return
       } catch {
@@ -258,6 +316,41 @@ async function sendMessage() {
   }
 }
 
+function openAbandonConfirm() {
+  if (!canAbandon.value) return
+  abandonError.value = ''
+  abandonReason.value = ''
+  abandonConfirmOpen.value = true
+}
+
+function closeAbandonConfirm() {
+  if (abandoning.value) return
+  abandonConfirmOpen.value = false
+  abandonError.value = ''
+}
+
+async function confirmAbandon() {
+  if (!requirementId.value || abandoning.value) return
+  abandonError.value = ''
+  abandoning.value = true
+  try {
+    const trimmedReason = abandonReason.value.trim()
+    await intakeApi.abandonRequirement(requirementId.value, {
+      reason: trimmedReason ? trimmedReason : undefined,
+    })
+    await requirementStore.fetchRequirement(requirementId.value)
+    abandonConfirmOpen.value = false
+    abandonReason.value = ''
+  } catch (e) {
+    abandonError.value =
+      e instanceof ApiError
+        ? e.message
+        : formatGuidedError('问题：放弃操作失败。', '原因：网络或服务异常。', '下一步：请稍后重试。')
+  } finally {
+    abandoning.value = false
+  }
+}
+
 async function startFresh() {
   sessionStorage.removeItem(STORAGE_KEY)
   requirementId.value = null
@@ -293,14 +386,24 @@ onMounted(() => {
         <h1 class="text-2xl font-bold text-text-primary">发起需求</h1>
         <p class="mt-1 text-sm text-text-muted">通过对话描述业务目标，自动生成标准 PRD 与执行任务</p>
       </div>
-      <button
-        v-if="authStore.isBusiness && !pageLoading && !pageError"
-        type="button"
-        class="min-h-11 rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-text-secondary transition hover:bg-slate-50"
-        @click="startFresh"
-      >
-        新建会话
-      </button>
+      <div v-if="authStore.isBusiness && !pageLoading && !pageError" class="flex flex-wrap items-center gap-2">
+        <button
+          v-if="canAbandon"
+          type="button"
+          data-test="abandon-button"
+          class="min-h-11 rounded-lg border border-rose-200 bg-white px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-50"
+          @click="openAbandonConfirm"
+        >
+          放弃需求
+        </button>
+        <button
+          type="button"
+          class="min-h-11 rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-text-secondary transition hover:bg-slate-50"
+          @click="startFresh"
+        >
+          新建会话
+        </button>
+      </div>
     </div>
 
     <p
@@ -360,6 +463,25 @@ onMounted(() => {
         </div>
 
         <div
+          v-if="isAbandoned"
+          data-test="abandoned-banner"
+          class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900"
+          role="status"
+        >
+          <p class="font-medium">该需求已放弃（{{ STATUS_LABEL.abandoned }}）。</p>
+          <p class="mt-1">对话已关闭，历史消息与字段快照保持可追溯。如需继续推进，请从「新建会话」重新发起。</p>
+        </div>
+
+        <p
+          v-if="deepLinkHint"
+          data-test="deep-link-hint"
+          class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          role="status"
+        >
+          {{ deepLinkHint }}
+        </p>
+
+        <div
           v-if="
             canViewIntakeAdmission &&
             admission &&
@@ -399,6 +521,54 @@ onMounted(() => {
         </div>
       </div>
 
+      <div
+        v-if="abandonConfirmOpen"
+        data-test="abandon-modal"
+        class="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/30 p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="abandon-modal-title"
+      >
+        <div class="w-full max-w-md rounded-xl border border-border bg-white p-5 shadow-xl">
+          <h2 id="abandon-modal-title" class="text-base font-semibold text-text-primary">确认放弃该需求？</h2>
+          <p class="mt-2 text-sm text-text-secondary">
+            放弃后，本次对话将关闭、无法继续发送消息；历史消息与字段快照会完整保留以便追溯。此操作不可撤销。
+          </p>
+          <label class="mt-4 flex flex-col gap-1 text-xs text-text-muted">
+            放弃原因（可选）
+            <textarea
+              v-model="abandonReason"
+              rows="3"
+              data-test="abandon-reason"
+              placeholder="如：业务优先级调整、改走其他渠道…"
+              class="rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-text-primary focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none"
+              :disabled="abandoning"
+            />
+          </label>
+          <p v-if="abandonError" class="mt-2 text-sm text-danger" role="alert">{{ abandonError }}</p>
+          <div class="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              data-test="abandon-cancel"
+              class="min-h-11 rounded-lg border border-border bg-white px-4 py-2 text-sm text-text-secondary transition hover:bg-slate-50 disabled:opacity-50"
+              :disabled="abandoning"
+              @click="closeAbandonConfirm"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              data-test="abandon-confirm"
+              class="min-h-11 rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-700 disabled:opacity-50"
+              :disabled="abandoning"
+              @click="confirmAbandon"
+            >
+              {{ abandoning ? '放弃中…' : '确认放弃' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div class="absolute inset-x-0 bottom-0 border-t border-slate-100 bg-white/95 p-4 backdrop-blur">
         <p
           v-if="sendError"
@@ -412,7 +582,8 @@ onMounted(() => {
             v-model="inputText"
             rows="2"
             placeholder="直接说出你的想法，或粘贴业务文档..."
-            :disabled="sending || !requirementId || !isCollecting"
+            :disabled="sending || !requirementId || !isCollecting || abandoning"
+            data-test="chat-input"
             class="min-h-11 flex-1 resize-none rounded-xl border border-border bg-slate-50 px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:border-primary-500 focus:ring-1 focus:ring-primary-500 focus:outline-none disabled:opacity-50"
             @keydown.enter.exact.prevent="sendMessage"
           />

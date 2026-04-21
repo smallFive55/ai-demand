@@ -249,3 +249,11 @@ export interface PatchRequirementIntakePayload {
   businessUnitId: string
 }
 
+/**
+ * 业务方放弃需求请求体（Story 2.3）。
+ * - `reason` 可选；若提供需为字符串且长度 ≤ 500
+ */
+export interface AbandonRequirementPayload {
+  reason?: string
+}
+
