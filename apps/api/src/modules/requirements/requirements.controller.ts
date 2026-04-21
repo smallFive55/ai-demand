@@ -85,4 +85,21 @@ export class RequirementsController {
     const requestId = requestIdHeader ?? randomUUID()
     return this.requirementsService.appendMessage(id, body?.content ?? '', request.actor, requestId)
   }
+
+  @Patch(':id/abandon')
+  @HttpCode(200)
+  async abandon(
+    @Param('id') id: string,
+    @Body() body: { reason?: string } = {},
+    @Req() request: RequestWithActor,
+    @Headers('x-request-id') requestIdHeader?: string,
+  ) {
+    const requestId = requestIdHeader ?? randomUUID()
+    return this.requirementsService.abandonRequirement(
+      id,
+      request.actor,
+      requestId,
+      body?.reason,
+    )
+  }
 }

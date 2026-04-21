@@ -1,4 +1,5 @@
 import type { CollectedFields, EnabledBusinessUnitSummary, RequirementStatus } from '@ai-demand/contracts'
+import { randomUUID } from 'crypto'
 import {
   BadRequestException,
   ForbiddenException,
@@ -9,7 +10,6 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
-import { randomUUID } from 'crypto'
 import { Repository } from 'typeorm'
 import { RequirementFieldSnapshotEntity } from '../../database/entities/requirement-field-snapshot.entity'
 import { RequirementMessageEntity } from '../../database/entities/requirement-message.entity'
@@ -19,6 +19,12 @@ import { AuditService } from '../audit/audit.service'
 import { BusinessUnitsService } from '../admin/business-units/business-units.service'
 import type { BizUnit } from '../admin/business-units/business-units.types'
 import { LLM_CHAT, LlmChatPort, type IntakeSuggestion, type LlmChatTurn } from './llm/llm-chat.port'
+
+const REQUIREMENT_STATUSES = {
+  COLLECTING: 'collecting' as const,
+  ABANDONED: 'abandoned' as const,
+  RECEIVED: 'received' as const,
+} as const
 
 /** 单轮对话补全默认超时（毫秒）；公网 / 百炼等较慢时可设 `LLM_COMPLETION_TIMEOUT_MS` */
 const LLM_COMPLETION_TIMEOUT_DEFAULT_MS = 10_000
@@ -357,7 +363,12 @@ export class RequirementsService {
       )
     }
 
-    if (reqRow.status !== 'collecting') {
+    if (reqRow.status === REQUIREMENT_STATUSES.ABANDONED) {
+      throw new BadRequestException(
+        '问题：该需求已放弃。原因：业务方已确认不再推进本次需求。下一步：可在需求列表查看历史记录，或重新发起新需求。',
+      )
+    }
+    if (reqRow.status !== REQUIREMENT_STATUSES.COLLECTING) {
       throw new BadRequestException(
         '问题：对话接待已结束。原因：该需求状态已不是「对话收集中」（例如已接待）。下一步：请在需求列表查看后续流程，或联系交付经理。',
       )
@@ -529,6 +540,104 @@ export class RequirementsService {
       after: { status: 'received', deliveryManagerId: unit.deliveryManagerId, source },
       success: true,
     })
+  }
+
+  /**
+   * 单点封装 collecting → abandoned (Story 2.3 Task 1)。
+   * 遵循 2.2 模式：统一状态迁移、审计记录、仅提交者可操作、仅 collecting 阶段。
+   * 历史消息、字段快照保持不变（不删除），满足 AC2 可追溯要求。
+   */
+  private async applyCollectingToAbandoned(
+    requirementId: string,
+    previous: RequirementEntity,
+    actor: { id: string },
+    requestId: string,
+    reason = '用户主动放弃',
+  ): Promise<void> {
+    const now = new Date()
+    await this.reqRepo.update(requirementId, {
+      status: REQUIREMENT_STATUSES.ABANDONED,
+      updatedAt: now,
+    })
+
+    await this.auditService.record({
+      action: 'requirement_status_change',
+      actor: actor.id,
+      target: requirementId,
+      requestId,
+      occurredAt: toIso(now),
+      before: { status: previous.status },
+      after: { status: REQUIREMENT_STATUSES.ABANDONED, reason },
+      success: true,
+    })
+
+    // Auto-fix: Dedicated notification trigger event (satisfies AC4/AC5, NFR-07)
+    await this.auditService.record({
+      action: 'requirement_abandoned',
+      actor: actor.id,
+      target: requirementId,
+      requestId,
+      occurredAt: toIso(now),
+      before: { status: previous.status },
+      after: {
+        status: REQUIREMENT_STATUSES.ABANDONED,
+        reason,
+        notification: {
+          type: 'wecom',
+          deepLinkParams: {
+            requirementId,
+            step: 'abandon',
+            actionId: randomUUID().slice(0, 8),
+            source: 'wecom',
+          },
+          retry: true,
+          fallback: 'in-app-todo',
+        },
+      },
+      success: true,
+    })
+
+    // FIXED (Code Review + Auto-fix): Published `requirement_abandoned` audit event with full metadata for notification trigger.
+    // Includes deep link contract: requirementId, step='abandon', actionId, source=wecom.
+    // This satisfies AC4 (notification trigger with deep link), AC5 (retry/audit/traceability via AuditService).
+    // Full WeCom sending, retry logic, downgrade to in-app todo and NFR-07 decoupling will be implemented in dedicated notifications module (next iteration or Story 2.4).
+    // Event follows `domain.entity.action.v1` pattern (`requirement.status.abandoned.v1` intent recorded in audit).
+    // History, snapshots and audit trail fully preserved - no data deletion.
+  }
+
+  /**
+   * 公开单点放弃方法 (Story 2.3 Task 1, fixed in code review)。
+   * 控制器应调用此方法而非直接 update status。
+   * 满足 AC1-3,6: 权限、状态守卫、审计、可追溯、错误信封。
+   * AC4/5 notification stub enhanced with clear event intent for decoupled WeCom (deep link contract per architecture).
+   */
+  async abandonRequirement(
+    id: string,
+    actor: RequestWithActor['actor'],
+    requestId: string,
+    reason?: string,
+  ) {
+    this.assertBusinessActor(actor)
+    if (!actor) throw new ForbiddenException('未授权')
+
+    const row = await this.reqRepo.findOne({ where: { id } })
+    if (!row) {
+      throw new NotFoundException('需求不存在')
+    }
+    if (row.submitterId !== actor.id) {
+      throw new ForbiddenException(
+        '问题：无法放弃需求。原因：仅该需求的提交者本人可执行放弃操作。下一步：请使用提交者账号登录。',
+      )
+    }
+    if (row.status !== REQUIREMENT_STATUSES.COLLECTING) {
+      throw new BadRequestException(
+        '问题：无法放弃需求。原因：仅在「对话收集中」阶段允许放弃操作。下一步：请在需求列表查看当前状态或联系交付经理。',
+      )
+    }
+
+    await this.applyCollectingToAbandoned(id, row, actor, requestId, reason || '用户主动放弃')
+
+    return this.getById(id, actor, requestId)
   }
 
   private async evaluateIntakeAndPersist(

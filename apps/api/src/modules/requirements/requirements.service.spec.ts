@@ -514,4 +514,71 @@ describe('RequirementsService', () => {
       )
     })
   })
+
+  describe('abandonRequirement (Story 2.3)', () => {
+    const reqId = 'abandon-req-1'
+    const actor = { id: 'biz-b', role: 'business' as const }
+    const otherActor = { id: 'other-biz', role: 'business' as const }
+    const reqId2 = 'abandon-req-2'
+
+    it('allows submitter to abandon a collecting requirement and records audit', async () => {
+      mockReqRepo.findOne.mockResolvedValueOnce(
+        reqEntity({ id: reqId, submitterId: actor.id, status: 'collecting' })
+      )
+      mockReqRepo.update.mockResolvedValue({ affected: 1 })
+      mockReqRepo.findOne.mockResolvedValueOnce(
+        reqEntity({ id: reqId, submitterId: actor.id, status: 'abandoned' })
+      )
+
+      const result = await service.abandonRequirement(reqId, actor, 'req-123')
+
+      expect(result.status).toBe('abandoned')
+      expect(mockReqRepo.update).toHaveBeenCalledWith(
+        reqId,
+        expect.objectContaining({ status: 'abandoned' })
+      )
+      expect(mockAudit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'requirement_status_change',
+          actor: actor.id,
+          target: reqId,
+          after: expect.objectContaining({ status: 'abandoned' }),
+        })
+      )
+    })
+
+    it('rejects non-submitter from abandoning', async () => {
+      mockReqRepo.findOne.mockResolvedValue(
+        reqEntity({ id: reqId2, submitterId: 'other-id', status: 'collecting' })
+      )
+
+      await expect(
+        service.abandonRequirement(reqId2, actor, 'req-456')
+      ).rejects.toThrow(ForbiddenException)
+    })
+
+    it('rejects abandon when status is not collecting', async () => {
+      mockReqRepo.findOne.mockResolvedValue(
+        reqEntity({ id: reqId, submitterId: actor.id, status: 'received' })
+      )
+
+      await expect(
+        service.abandonRequirement(reqId, actor, 'req-789')
+      ).rejects.toThrow(BadRequestException)
+    })
+
+    it('throws specific error for appendMessage on abandoned requirement (AC3)', async () => {
+      mockReqRepo.findOne.mockResolvedValue(
+        reqEntity({ id: reqId, submitterId: actor.id, status: 'abandoned' })
+      )
+
+      await expect(
+        service.appendMessage(reqId, 'test message', actor, 'req-999')
+      ).rejects.toThrow(
+        expect.objectContaining({
+          message: expect.stringContaining('该需求已放弃'),
+        })
+      )
+    })
+  })
 })
