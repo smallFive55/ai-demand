@@ -2,12 +2,15 @@ import { api } from '@/api/client'
 import type {
   AppendRequirementMessagePayload,
   AppendRequirementMessageResponse,
+  EnabledBusinessUnitSummary,
+  PatchRequirementIntakePayload,
   Requirement,
   RequirementFieldSnapshot,
   RequirementMessage,
 } from '@ai-demand/contracts'
 
 const base = '/v1/requirements'
+const unitsBase = '/v1/business-units'
 
 export const intakeApi = {
   createRequirement: () => api.post<Requirement>(base),
@@ -22,4 +25,9 @@ export const intakeApi = {
 
   appendMessage: (id: string, payload: AppendRequirementMessagePayload) =>
     api.post<AppendRequirementMessageResponse>(`${base}/${id}/messages`, payload),
+
+  listEnabledBusinessUnits: () => api.get<EnabledBusinessUnitSummary[]>(`${unitsBase}/enabled`),
+
+  patchIntake: (id: string, payload: PatchRequirementIntakePayload) =>
+    api.patch<Requirement>(`${base}/${id}/intake`, payload),
 }

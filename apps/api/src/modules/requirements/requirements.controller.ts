@@ -5,6 +5,7 @@ import {
   Headers,
   HttpCode,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -37,6 +38,18 @@ export class RequirementsController {
   ) {
     const requestId = requestIdHeader ?? randomUUID()
     return this.requirementsService.getById(id, request.actor, requestId)
+  }
+
+  @Patch(':id/intake')
+  @HttpCode(200)
+  async patchIntake(
+    @Param('id') id: string,
+    @Body() body: { businessUnitId?: string },
+    @Req() request: RequestWithActor,
+    @Headers('x-request-id') requestIdHeader?: string,
+  ) {
+    const requestId = requestIdHeader ?? randomUUID()
+    return this.requirementsService.patchIntake(id, body?.businessUnitId ?? '', request.actor, requestId)
   }
 
   @Get(':id/messages')

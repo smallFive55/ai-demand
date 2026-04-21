@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { accountsApi, type Account } from './api'
+import { rolesApi, type Role } from '@/features/admin/roles/api'
 import { ApiError } from '@/api/client'
 
 type Mode = 'create' | 'edit'
 
 const loading = ref(false)
+const rolesLoading = ref(false)
+const roles = ref<Role[]>([])
 const accounts = ref<Account[]>([])
 const feedback = ref('')
 const actionError = ref('')
@@ -27,6 +30,22 @@ const confirmDisableId = ref<string | null>(null)
 
 const title = computed(() => (mode.value === 'create' ? '创建账号' : '编辑账号'))
 
+const enabledRoles = computed(() =>
+  [...roles.value].filter((r) => r.status === 'enabled').sort((a, b) => a.name.localeCompare(b.name)),
+)
+
+function roleLabel(roleId: string): string {
+  const r = roles.value.find((x) => x.id === roleId)
+  return r?.name ?? roleId
+}
+
+function defaultRoleId(): string {
+  const viewer = roles.value.find((r) => r.name === 'viewer' && r.status === 'enabled')
+  if (viewer) return viewer.id
+  const first = roles.value.find((r) => r.status === 'enabled')
+  return first?.id ?? ''
+}
+
 function formatGuidedError(problem: string, reason: string, next: string) {
   return `问题：${problem}\n原因：${reason}\n下一步：${next}`
 }
@@ -40,18 +59,33 @@ async function loadAccounts() {
   }
 }
 
-function openCreate() {
+async function loadRoles() {
+  rolesLoading.value = true
+  try {
+    roles.value = await rolesApi.list()
+  } finally {
+    rolesLoading.value = false
+  }
+}
+
+async function openCreate() {
+  if (roles.value.length === 0) {
+    await loadRoles()
+  }
   mode.value = 'create'
   editingId.value = null
   form.name = ''
   form.email = ''
-  form.roleId = 'viewer'
+  form.roleId = defaultRoleId()
   form.password = ''
   actionError.value = ''
   isDrawerOpen.value = true
 }
 
-function openEdit(account: Account) {
+async function openEdit(account: Account) {
+  if (roles.value.length === 0) {
+    await loadRoles()
+  }
   mode.value = 'edit'
   editingId.value = account.id
   form.name = account.name
@@ -172,7 +206,7 @@ async function submitImport() {
 }
 
 onMounted(() => {
-  void loadAccounts()
+  void Promise.all([loadAccounts(), loadRoles()])
 })
 </script>
 
@@ -211,7 +245,7 @@ onMounted(() => {
           <tr v-for="account in accounts" :key="account.id" class="border-t border-border hover:bg-slate-50/80">
             <td class="py-2">{{ account.name }}</td>
             <td class="py-2">{{ account.email }}</td>
-            <td class="py-2">{{ account.roleId }}</td>
+            <td class="py-2">{{ roleLabel(account.roleId) }}</td>
             <td class="py-2">{{ account.status === 'enabled' ? '启用' : '禁用' }}</td>
             <td class="py-2">
               <div class="flex items-center gap-2">
@@ -304,12 +338,19 @@ onMounted(() => {
           </label>
           <label class="block text-sm">
             <span class="mb-1 block text-text-secondary">角色</span>
-            <select v-model="form.roleId" class="w-full rounded border border-border px-2 py-1.5">
-              <option value="admin">admin</option>
-              <option value="manager">manager</option>
-              <option value="viewer">viewer</option>
-              <option value="business">business（业务方，可发起需求）</option>
+            <select
+              v-model="form.roleId"
+              class="w-full rounded border border-border px-2 py-1.5"
+              :disabled="rolesLoading || enabledRoles.length === 0"
+            >
+              <option v-for="r in enabledRoles" :key="r.id" :value="r.id" :title="r.description">
+                {{ r.name === 'business' ? `${r.name}（业务方，可发起需求）` : r.name }}
+              </option>
             </select>
+            <span v-if="rolesLoading" class="mt-1 block text-xs text-text-muted">角色列表加载中…</span>
+            <span v-else-if="enabledRoles.length === 0" class="mt-1 block text-xs text-danger">
+              未加载到可用角色，请刷新页面或检查权限
+            </span>
           </label>
           <button
             class="w-full rounded-md bg-primary-600 px-3 py-2 text-sm text-text-inverse transition hover:bg-primary-700"

@@ -15,6 +15,10 @@ export interface AuditEvent {
     | 'requirement_message'
     | 'requirement_field_snapshot'
     | 'requirement_llm_failed'
+    | 'requirement_intake_assessed'
+    | 'requirement_intake_manual_unit'
+    | 'requirement_intake_below_threshold'
+    | 'requirement_status_change'
   actor: string
   target: string
   requestId: string

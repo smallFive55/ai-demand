@@ -1,5 +1,7 @@
 export type {
+  AdmissionAssessment,
   CollectedFields,
+  EnabledBusinessUnitSummary,
   Requirement,
   RequirementFieldSnapshot,
   RequirementMessage,

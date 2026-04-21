@@ -174,8 +174,20 @@ export interface CollectedFields {
   coreScope?: string
   /** 预期效果或成功标准 */
   successCriteria?: string
-  /** 预留：后续与板块/准入对接（非本故事验收项） */
+  /** AI 建议的拟归属板块（须由服务端校验是否为启用板块） */
   suggestedBusinessUnitId?: string
+}
+
+/** 项目识别 + 准入评估的可展示结论（持久化于需求行） */
+export interface AdmissionAssessment {
+  /** 当前拟归属业务板块 ID；无法识别或未选定时为 null */
+  businessUnitId: string | null
+  /** 关联项目 ID（可为空数组） */
+  projectIds: string[]
+  /** 与板块准入标准对照后的匹配度 0–100；尚未评估时为 null */
+  admissionScore: number | null
+  /** 可选说明（模型或规则生成） */
+  admissionRationale?: string
 }
 
 export interface Requirement {
@@ -190,6 +202,8 @@ export interface Requirement {
   prototypeUrl?: string
   /** 接待对话产生的最新结构化字段（列表页可为空对象） */
   collectedFields: CollectedFields
+  /** 识别与准入评估结果视图（与库字段一致） */
+  admissionAssessment: AdmissionAssessment
   createdAt: string
   updatedAt: string
 }
@@ -220,5 +234,18 @@ export interface AppendRequirementMessageResponse {
   userMessage: RequirementMessage
   aiMessage: RequirementMessage
   collectedFields: CollectedFields
+}
+
+/** 业务方可访问的启用板块摘要（不含管理员专属字段） */
+export interface EnabledBusinessUnitSummary {
+  id: string
+  name: string
+  description: string
+  functionList: string[]
+}
+
+export interface PatchRequirementIntakePayload {
+  /** 人工修正后的目标板块（须为当前启用板块） */
+  businessUnitId: string
 }
 

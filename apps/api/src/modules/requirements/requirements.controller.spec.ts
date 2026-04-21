@@ -13,6 +13,7 @@ describe('RequirementsController', () => {
     listMessages: jest.fn(),
     listFieldSnapshots: jest.fn(),
     appendMessage: jest.fn(),
+    patchIntake: jest.fn(),
   }
 
   beforeEach(async () => {
@@ -46,5 +47,14 @@ describe('RequirementsController', () => {
     mockService.create.mockRejectedValue(new ForbiddenException('拒绝'))
     const req = { actor: { id: 'biz-1', role: 'business' } } as RequestWithActor
     await expect(controller.create(req, 'hdr-x')).rejects.toBeInstanceOf(ForbiddenException)
+  })
+
+  it('patchIntake passes businessUnitId to service', async () => {
+    mockService.patchIntake.mockResolvedValue({ id: 'rid-1' })
+    const req = { actor: { id: 'biz-1', role: 'business' } } as RequestWithActor
+    await expect(
+      controller.patchIntake('rid-1', { businessUnitId: 'bu-9' }, req, 'hdr-p'),
+    ).resolves.toEqual({ id: 'rid-1' })
+    expect(mockService.patchIntake).toHaveBeenCalledWith('rid-1', 'bu-9', req.actor, 'hdr-p')
   })
 })
