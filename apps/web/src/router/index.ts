@@ -59,13 +59,20 @@ const routes: RouteRecordRaw[] = [
 
   // ── 通知深链契约（架构 `architecture.md:104`）──
   // `/{role}/approvals?requirementId=&step=&actionId=&source=wecom` 是通知服务的统一深链形态。
-  // 当前 Story 2.3 的放弃事件只面向业务方提交者（informational，非审批上下文），
-  // 落地到已有的 RequirementChatView；后续实现独立 BusinessApprovalsView 时替换此组件。
+  // Story 2.3：业务方放弃事件深链（面向提交者，informational），复用 RequirementChatView；
+  // Story 2.4：交付经理接待成功事件深链（面向接待经理，进入审查），使用独立 Landing 组件。
+  // 独立的双轨审批视图将在 Story 3.2 / 4.1 落地后替换 DeliveryManagerApprovalsLanding。
   {
     path: '/business/approvals',
     name: 'business-approvals',
     component: () => import('@/views/requirement/RequirementChatView.vue'),
     meta: { title: '我的通知' },
+  },
+  {
+    path: '/delivery-manager/approvals',
+    name: 'delivery-manager-approvals',
+    component: () => import('@/views/requirement/DeliveryManagerApprovalsLanding.vue'),
+    meta: { title: '需求审查', requiresDeliveryManager: true },
   },
 
   // ── 任务管理 ──
@@ -144,6 +151,19 @@ router.beforeEach((to) => {
 
   if (to.meta.requiresAdmin && (!authStore.isAuthenticated || !authStore.canAccessAdminConsole)) {
     return { path: '/login', query: { redirect: to.fullPath } }
+  }
+
+  // Story 2.4：交付经理接待通知深链访问控制（角色守卫）
+  // 未登录 → 登录回跳保留深链语义；已登录但非 delivery_manager → 放行但组件层渲染
+  // "问题/原因/下一步"三段式提示（不白屏、不直接抢救式跳转）。
+  if (to.meta.requiresDeliveryManager) {
+    if (!authStore.isAuthenticated) {
+      return { path: '/login', query: { redirect: to.fullPath } }
+    }
+    if (!authStore.isDeliveryManager) {
+      // 已登录但角色不匹配 → 放行到组件，由组件展示三段式引导提示
+      // （不直接重定向，避免丢失深链语义）
+    }
   }
 
   const title = (to.meta.title as string) ?? '需求全流程管理系统'

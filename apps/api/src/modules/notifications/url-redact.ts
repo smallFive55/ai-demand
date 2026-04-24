@@ -19,3 +19,16 @@ export function redactWebhookUrl(raw: string): string {
 export function sanitizeErrorMessage(raw: string): string {
   return raw.replace(/https?:\/\/\S+/gi, (m) => redactWebhookUrl(m))
 }
+
+/**
+ * 过滤空/非字符串 mention（被 NotificationsService / HttpWecomNotifierService 共用）。
+ * 统一提取避免两处独立维护导致过滤规则漂移。
+ */
+export function normalizeMentions(raw: string[] | undefined): string[] {
+  return (raw ?? []).reduce<string[]>((acc, s) => {
+    if (typeof s !== 'string') return acc
+    const trimmed = s.trim()
+    if (trimmed.length > 0) acc.push(trimmed)
+    return acc
+  }, [])
+}

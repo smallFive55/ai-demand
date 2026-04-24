@@ -51,10 +51,10 @@ development_status:
   2-1-业务方对话式提交需求: done
   2-2-ai-项目识别与准入判断: done
   2-3-放弃路径与通知闭环: done
-  2-4-接待成功通知交付经理: backlog
+  2-4-接待成功通知交付经理: done
   epic-2-retrospective: optional
 
-  epic-3: backlog
+  epic-3: in-progress
   3-1-自动生成-prd-与原型: backlog
   3-2-交付经理审查与版本控制: backlog
   3-3-业务方评审与回流机制: backlog

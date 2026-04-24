@@ -18,8 +18,10 @@ export interface AuditEvent {
     | 'requirement_intake_assessed'
     | 'requirement_intake_manual_unit'
     | 'requirement_intake_below_threshold'
+    | 'requirement_intake_below_thres'
     | 'requirement_status_change'
     | 'requirement_abandoned'
+    | 'requirement_received'
   actor: string
   target: string
   requestId: string

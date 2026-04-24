@@ -236,10 +236,21 @@ export class RequirementsService {
     })
 
     if (scoreResult.score >= unit.admissionThreshold) {
-      await this.applyCollectingToReceived(id, row, unit, actor, requestId, 'manual_patch')
+      // Story 2.4：applyCollectingToReceived 返回 false 表示并发 no-op，
+      // 此时通知已由另一路径调度；当前调用不再重复派发、也不再补记 below_threshold。
+      await this.applyCollectingToReceived(
+        id,
+        row,
+        unit,
+        actor,
+        requestId,
+        'manual_patch',
+        scoreResult.score,
+      )
     } else {
       await this.auditService.record({
-        action: 'requirement_intake_below_threshold',
+        // NOTE: `audit_events.action` 列当前为 varchar(32)，action 需控制长度避免 DB 500。
+        action: 'requirement_intake_below_thres',
         actor: actor.id,
         target: id,
         requestId,
@@ -518,7 +529,14 @@ export class RequirementsService {
   }
 
   /**
-   * 单点封装 collecting → received；后续可抽出为独立状态机服务，避免多处散落 update status。
+   * 单点封装 collecting → received（Story 2.2 建立，Story 2.4 扩展）。
+   *
+   * - 原子状态迁移：条件 UPDATE (`WHERE status='collecting'`)，并发双提交只会命中一次；
+   *   未命中（affected<1）时写入 `received_concurrent_no_op` 审计并直接返回 `false`，
+   *   告知上层"本次调用是幂等 no-op，请跳过后续副作用"（AC5）。
+   * - 命中迁移后通过 `scheduleReceivedNotification` fire-and-forget 调度企微通知
+   *   （AC1/AC4），通知编排失败由 NotificationsService 自行重试 + 降级，主流程不阻塞。
+   * - 返回值：`true` 表示本次确实执行了迁移（通知已调度）；`false` 表示 no-op。
    */
   private async applyCollectingToReceived(
     requirementId: string,
@@ -527,24 +545,163 @@ export class RequirementsService {
     actor: { id: string },
     requestId: string,
     source: 'llm_intake' | 'manual_patch',
-  ): Promise<void> {
+    admissionScore: number,
+  ): Promise<boolean> {
     const now = new Date()
-    await this.reqRepo.update(requirementId, {
-      status: 'received',
-      deliveryManagerId: unit.deliveryManagerId,
-      updatedAt: now,
-    })
+    const occurredAtIso = toIso(now)
+
+    const updateResult = await this.reqRepo.update(
+      { id: requirementId, status: REQUIREMENT_STATUSES.COLLECTING },
+      {
+        status: REQUIREMENT_STATUSES.RECEIVED,
+        deliveryManagerId: unit.deliveryManagerId,
+        updatedAt: now,
+      },
+    )
+    const affected =
+      typeof updateResult.affected === 'number'
+        ? updateResult.affected
+        : Number(updateResult.affected ?? 0)
+    if (affected < 1) {
+      // 并发：另一路径已完成迁移。幂等：不重复派发通知，写 no-op 审计便于追溯。
+      await this.auditService.record({
+        action: 'requirement_status_change',
+        actor: actor.id,
+        target: requirementId,
+        requestId,
+        occurredAt: occurredAtIso,
+        before: { status: previous.status },
+        after: {
+          status: REQUIREMENT_STATUSES.RECEIVED,
+          deliveryManagerId: unit.deliveryManagerId,
+          source,
+        },
+        success: false,
+        reasonCode: 'received_concurrent_no_op',
+      })
+      return false
+    }
 
     await this.auditService.record({
       action: 'requirement_status_change',
       actor: actor.id,
       target: requirementId,
       requestId,
-      occurredAt: toIso(now),
+      occurredAt: occurredAtIso,
       before: { status: previous.status },
-      after: { status: 'received', deliveryManagerId: unit.deliveryManagerId, source },
+      after: {
+        status: REQUIREMENT_STATUSES.RECEIVED,
+        deliveryManagerId: unit.deliveryManagerId,
+        source,
+      },
       success: true,
     })
+
+    // Story 2.4 AC1：通知调度必须在"状态迁移成功"后、fire-and-forget 发起，
+    // 主流程 HTTP 响应不得被企微重试阻塞。
+    if (unit.deliveryManagerId) {
+      this.scheduleReceivedNotification({
+        requirementId,
+        requirementTitle: previous.title,
+        submitterId: previous.submitterId,
+        businessUnitName: unit.name,
+        admissionScore,
+        admissionThreshold: unit.admissionThreshold,
+        source,
+        recipientId: unit.deliveryManagerId,
+        actor: actor.id,
+        requestId,
+        occurredAt: occurredAtIso,
+      })
+    } else {
+      // 板块未配置 deliveryManagerId：属于管理员配置问题而非运行时错误；
+      // 写一条观测审计便于运维发现并修复，但不阻塞业务主流程。
+      this.logger.warn(
+        `[notify] requirement=${requirementId} received without deliveryManagerId on unit=${unit.id}; notification skipped`,
+      )
+      void this.auditService
+        .record({
+          action: 'requirement_received',
+          actor: actor.id,
+          target: requirementId,
+          requestId,
+          occurredAt: occurredAtIso,
+          before: null,
+          after: {
+            eventName: 'requirement.status.received.v1',
+            businessUnitId: unit.id,
+            reason: 'missing_delivery_manager_id',
+          },
+          success: false,
+          reasonCode: 'received_missing_delivery_manager',
+        })
+        .catch((e: unknown) => {
+          const msg = e instanceof Error ? e.message : String(e)
+          this.logger.error(
+            `[notify] audit record failed for missing delivery manager requirement=${requirementId} err=${msg}`,
+          )
+        })
+    }
+
+    return true
+  }
+
+  /**
+   * Story 2.4：以 fire-and-forget 方式调度接待成功通知（AC1）。
+   *
+   * 严格复制 `scheduleAbandonNotification` 模板：
+   * - 不 await，主流程 HTTP 响应不被重试/降级阻塞；
+   * - NotificationsService 内部负责重试、降级与审计（AC4/AC6）；
+   * - 通过 `notificationsService.track()` 注册在飞 Promise 供 `onApplicationShutdown` 排空；
+   * - 编排器自身抛错时落 `notification_orchestrator_unexpected` 审计。
+   *
+   * HIGH-3 继承：`mentionedWecomUserIds: []`，等待 <userId → 企微 userid> 映射表的 follow-up story。
+   */
+  protected scheduleReceivedNotification(input: {
+    requirementId: string
+    requirementTitle: string
+    submitterId: string
+    businessUnitName: string
+    admissionScore: number
+    admissionThreshold: number
+    source: 'llm_intake' | 'manual_patch'
+    recipientId: string
+    actor: string
+    requestId: string
+    occurredAt: string
+  }): void {
+    const task = Promise.resolve()
+      .then(() =>
+        this.notificationsService.notifyRequirementReceived({
+          ...input,
+          mentionedWecomUserIds: [],
+        }),
+      )
+      .catch(async (err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err)
+        this.logger.error(
+          `[notify] received orchestrator unexpected failure requirement=${input.requirementId} request=${input.requestId} err=${msg}`,
+        )
+        try {
+          await this.auditService.record({
+            action: 'requirement_received',
+            actor: input.actor,
+            target: input.requirementId,
+            requestId: input.requestId,
+            occurredAt: input.occurredAt,
+            before: null,
+            after: { unexpectedError: msg, attemptedAt: new Date().toISOString() },
+            success: false,
+            reasonCode: 'notification_orchestrator_unexpected',
+          })
+        } catch (auditErr: unknown) {
+          const auditMsg = auditErr instanceof Error ? auditErr.message : String(auditErr)
+          this.logger.error(
+            `[notify] audit record itself failed requirement=${input.requirementId} err=${auditMsg}`,
+          )
+        }
+      })
+    void this.notificationsService.track(task)
   }
 
   /**
@@ -865,7 +1022,15 @@ export class RequirementsService {
       }
     }
 
-    await this.applyCollectingToReceived(requirementId, reqRow, unit, actor, requestId, 'llm_intake')
+    await this.applyCollectingToReceived(
+      requirementId,
+      reqRow,
+      unit,
+      actor,
+      requestId,
+      'llm_intake',
+      score as number,
+    )
     return {
       finalAssistantText: `${baseAssistantText}\n\n---\n需求已达到板块「${unit.name}」的准入标准（匹配度 ${score} ≥ ${unit.admissionThreshold}），状态已更新为「已接待」。`,
       transitioned: true,

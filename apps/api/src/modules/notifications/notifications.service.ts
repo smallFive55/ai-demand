@@ -1,34 +1,36 @@
 import { randomUUID } from 'crypto'
 import { Inject, Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common'
-import { AuditService } from '../audit/audit.service'
+import { AuditService, type AuditEvent } from '../audit/audit.service'
 import {
   NOTIFICATION_EVENTS,
   type NotificationDispatchResult,
+  type NotificationEventName,
   type NotificationRecipientTargeting,
   type RequirementDeepLinkParams,
   type WecomRequirementAbandonedPayload,
+  type WecomRequirementReceivedPayload,
 } from './notifications.types'
-import { sanitizeErrorMessage } from './url-redact'
+import { normalizeMentions, sanitizeErrorMessage } from './url-redact'
 import { WECOM_NOTIFIER, type WecomNotifierPort } from './wecom-notifier.port'
 
 /**
- * 通知编排服务（Story 2.3 Task 3）。
+ * 通知编排服务（Story 2.3 Task 3 建立；Story 2.4 扩展接待成功场景）。
  *
  * 能力：
- *  - 企业微信放弃通知：带深链参数（requirementId / step / actionId / source）
+ *  - 企业微信通知：
+ *      - 放弃事件（Story 2.3）：`requirement.status.abandoned.v1`（step=abandon，role=business）
+ *      - 接待成功事件（Story 2.4）：`requirement.status.received.v1`（step=review，role=delivery-manager）
  *  - 失败重试（指数退避，最大次数可配）
- *  - 超过阈值后降级为站内信/待办记录（当前阶段统一以 AuditService 记录 notification_fallback 事件，
- *    由前端"待办 / 消息中心"读取；后续若引入独立 inbox 表可替换此实现）
+ *  - 超过阈值后降级为站内信/待办记录（统一以 AuditService 记录 notification_fallback 事件）
  *  - 所有链路节点写审计（dispatch_started / 每次重试 / 最终成功或降级）
- *  - `onApplicationShutdown`：等待在飞通知排空（最长 `NOTIFICATION_SHUTDOWN_GRACE_MS`，默认 5s），
- *    降低进程优雅重启时丢失通知的概率。
+ *  - `onApplicationShutdown`：等待在飞通知排空（最长 `NOTIFICATION_SHUTDOWN_GRACE_MS`，默认 5s）
  *
  * NFR-07：异步解耦 + 重试 + 降级 + 可观测性。
  *
- * ⚠️ 架构偏离（HIGH-2）：`architecture.md` 约定 "API -> Redis Queue -> Worker" 的跨进程
- * 工作队列。当前实现为进程内 fire-and-forget + 审计 outbox 语义（`dispatch_started` 审计行
- * 即重放凭据），暂不具备跨进程持久化。真正引入 BullMQ/Redis Queue 属 Story 2.4 范围，
- * 届时本服务转为 Producer，Worker 消费持久化任务并仍使用审计作为观测面。
+ * ⚠️ 架构偏离（Story 2.3 HIGH-2 / Story 2.4 继承）：`architecture.md` 约定
+ * "API -> Redis Queue -> Worker" 的跨进程工作队列。当前实现为进程内 fire-and-forget
+ * + 审计 outbox 语义（`dispatch_started` 审计行即重放凭据），暂不具备跨进程持久化。
+ * BullMQ/Redis Queue 接入作为 follow-up story。
  */
 @Injectable()
 export class NotificationsService implements OnApplicationShutdown {
@@ -95,9 +97,7 @@ export class NotificationsService implements OnApplicationShutdown {
       actionId,
       source: 'wecom',
     }
-    const normalizedMentions = (input.mentionedWecomUserIds ?? []).filter(
-      (s): s is string => typeof s === 'string' && s.trim().length > 0,
-    )
+    const normalizedMentions = normalizeMentions(input.mentionedWecomUserIds)
     const targeting: NotificationRecipientTargeting =
       normalizedMentions.length > 0 ? 'user_mentioned' : 'group_broadcast'
     const payload: WecomRequirementAbandonedPayload = {
@@ -111,22 +111,135 @@ export class NotificationsService implements OnApplicationShutdown {
       mentionedWecomUserIds: normalizedMentions,
     }
 
-    // HIGH-2：outbox 语义 — 在尝试发送之前先落审计，确保即使进程崩溃也留有重放凭据
+    return this.dispatchWithRetryAndFallback({
+      auditAction: 'requirement_abandoned',
+      eventName: NOTIFICATION_EVENTS.REQUIREMENT_ABANDONED,
+      input: {
+        actor: input.actor,
+        requestId: input.requestId,
+        target: input.requirementId,
+        occurredAt: input.occurredAt,
+      },
+      deepLinkParams,
+      targeting,
+      mentionedCount: normalizedMentions.length,
+      send: () => this.wecom.sendRequirementAbandoned(payload),
+    })
+  }
+
+  /**
+   * Story 2.4：接待成功后通知交付经理。
+   *
+   * - `step=review`（架构契约 `/{role}/approvals`），交付经理通过深链进入过渡审批页。
+   * - 严格复用 abandon 路径的"outbox dispatch_started → 重试循环 → 降级审计"骨架，
+   *   通过私有 `dispatchWithRetryAndFallback` 抽象消除复制粘贴。
+   * - 主流程（`applyCollectingToReceived`）以 fire-and-forget 方式调度，本方法对失败只
+   *   体现在 `NotificationDispatchResult`，不抛错到调用方。
+   */
+  async notifyRequirementReceived(input: {
+    requirementId: string
+    requirementTitle: string
+    submitterId: string
+    businessUnitName: string
+    admissionScore: number
+    admissionThreshold: number
+    source: 'llm_intake' | 'manual_patch'
+    recipientId: string
+    actor: string
+    requestId: string
+    occurredAt: string
+    mentionedWecomUserIds?: string[]
+  }): Promise<NotificationDispatchResult> {
+    const actionId = randomUUID()
+    const deepLinkParams: RequirementDeepLinkParams = {
+      requirementId: input.requirementId,
+      step: 'review',
+      actionId,
+      source: 'wecom',
+    }
+    const normalizedMentions = normalizeMentions(input.mentionedWecomUserIds)
+    const targeting: NotificationRecipientTargeting =
+      normalizedMentions.length > 0 ? 'user_mentioned' : 'group_broadcast'
+    const payload: WecomRequirementReceivedPayload = {
+      eventName: NOTIFICATION_EVENTS.REQUIREMENT_RECEIVED,
+      recipientId: input.recipientId,
+      requirementId: input.requirementId,
+      requirementTitle: input.requirementTitle,
+      submitterId: input.submitterId,
+      businessUnitName: input.businessUnitName,
+      admissionScore: input.admissionScore,
+      admissionThreshold: input.admissionThreshold,
+      source: input.source,
+      occurredAt: input.occurredAt,
+      deepLinkParams,
+      mentionedWecomUserIds: normalizedMentions,
+    }
+
+    return this.dispatchWithRetryAndFallback({
+      auditAction: 'requirement_received',
+      eventName: NOTIFICATION_EVENTS.REQUIREMENT_RECEIVED,
+      input: {
+        actor: input.actor,
+        requestId: input.requestId,
+        target: input.requirementId,
+        occurredAt: input.occurredAt,
+      },
+      deepLinkParams,
+      targeting,
+      mentionedCount: normalizedMentions.length,
+      extraAfter: {
+        source: input.source,
+        admissionScore: input.admissionScore,
+        admissionThreshold: input.admissionThreshold,
+      },
+      send: () => this.wecom.sendRequirementReceived(payload),
+    })
+  }
+
+  /**
+   * 共用的 "dispatch_started outbox → 重试循环 → 降级审计" 骨架。
+   *
+   * 抽取动机（Story 2.4）：避免 abandon 与 received 两条通知路径在审计字段顺序 /
+   * reasonCode / attemptedAt 语义上漂移；新增事件类型只需传入发送 closure 与事件元数据。
+   *
+   * - 所有审计行 `occurredAt` 固定为业务时刻 `input.occurredAt`（H5 时序约定）；
+   *   实际尝试时间以 `attemptedAt` 字段暴露在 after 里。
+   * - 失败消息统一经 `sanitizeErrorMessage` 脱敏，防止 Webhook URL `?key=` 泄漏。
+   */
+  private async dispatchWithRetryAndFallback(args: {
+    auditAction: AuditEvent['action']
+    eventName: NotificationEventName
+    input: {
+      actor: string
+      requestId: string
+      target: string
+      occurredAt: string
+    }
+    deepLinkParams: RequirementDeepLinkParams
+    targeting: NotificationRecipientTargeting
+    mentionedCount: number
+    extraAfter?: Record<string, unknown>
+    send: () => Promise<{ externalMessageId?: string }>
+  }): Promise<NotificationDispatchResult> {
+    const { auditAction, eventName, input, deepLinkParams, targeting, mentionedCount, extraAfter, send } =
+      args
+
     await this.auditService.record({
-      action: 'requirement_abandoned',
+      action: auditAction,
       actor: input.actor,
-      target: input.requirementId,
+      target: input.target,
       requestId: input.requestId,
       occurredAt: input.occurredAt,
       before: null,
       after: {
-        eventName: payload.eventName,
+        eventName,
         channel: 'wecom',
         phase: 'dispatch_started',
         deepLinkParams,
         recipientTargeting: targeting,
-        mentionedCount: normalizedMentions.length,
+        mentionedCount,
         attemptedAt: new Date().toISOString(),
+        ...(extraAfter ?? {}),
       },
       success: true,
       reasonCode: 'notification_dispatch_started',
@@ -134,8 +247,8 @@ export class NotificationsService implements OnApplicationShutdown {
 
     if (targeting === 'group_broadcast' && process.env.WECOM_WEBHOOK_URL?.trim()) {
       this.logger.warn(
-        `[notify] group_broadcast mode used for requirement=${input.requirementId} (no mentionedWecomUserIds); ` +
-          'pending user→wecom userid mapping (follow-up story).',
+        `[notify] group_broadcast mode used for requirement=${input.target} event=${eventName} ` +
+          '(no mentionedWecomUserIds); pending user→wecom userid mapping (follow-up story).',
       )
     }
 
@@ -148,26 +261,25 @@ export class NotificationsService implements OnApplicationShutdown {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const attemptedAt = new Date().toISOString()
       try {
-        const res = await this.wecom.sendRequirementAbandoned(payload)
+        const res = await send()
         externalMessageId = res.externalMessageId
 
-        // H5：audit.occurredAt 固定为业务事件发生时刻 (input.occurredAt)，
-        //     实际尝试时间用 `attemptedAt` 暴露在 after 里，保持时序回放可一致。
         await this.auditService.record({
-          action: 'requirement_abandoned',
+          action: auditAction,
           actor: input.actor,
-          target: input.requirementId,
+          target: input.target,
           requestId: input.requestId,
           occurredAt: input.occurredAt,
           before: null,
           after: {
-            eventName: payload.eventName,
+            eventName,
             channel: 'wecom',
             attempt,
             attemptedAt,
             deepLinkParams,
             recipientTargeting: targeting,
             externalMessageId: externalMessageId ?? null,
+            ...(extraAfter ?? {}),
           },
           success: true,
         })
@@ -180,26 +292,26 @@ export class NotificationsService implements OnApplicationShutdown {
         }
       } catch (err) {
         const rawMsg = err instanceof Error ? err.message : String(err)
-        // MEDIUM-4：防止 Webhook URL（含 ?key=xxx 凭证）被错误消息拼出去落审计/日志
         lastError = sanitizeErrorMessage(rawMsg)
         this.logger.warn(
-          `[notify] wecom attempt=${attempt}/${maxAttempts} failed requirement=${input.requirementId} err=${lastError}`,
+          `[notify] wecom event=${eventName} attempt=${attempt}/${maxAttempts} failed requirement=${input.target} err=${lastError}`,
         )
         await this.auditService.record({
-          action: 'requirement_abandoned',
+          action: auditAction,
           actor: input.actor,
-          target: input.requirementId,
+          target: input.target,
           requestId: input.requestId,
           occurredAt: input.occurredAt,
           before: null,
           after: {
-            eventName: payload.eventName,
+            eventName,
             channel: 'wecom',
             attempt,
             attemptedAt,
             deepLinkParams,
             recipientTargeting: targeting,
             error: lastError,
+            ...(extraAfter ?? {}),
           },
           success: false,
           reasonCode: 'wecom_dispatch_failed',
@@ -211,22 +323,22 @@ export class NotificationsService implements OnApplicationShutdown {
       }
     }
 
-    // 重试耗尽 → 降级：写入 notification_fallback 语义事件，等待前端站内信/待办读取
     await this.auditService.record({
-      action: 'requirement_abandoned',
+      action: auditAction,
       actor: input.actor,
-      target: input.requirementId,
+      target: input.target,
       requestId: input.requestId,
       occurredAt: input.occurredAt,
       before: null,
       after: {
-        eventName: payload.eventName,
+        eventName,
         channel: 'in-app-todo',
         fallback: true,
         attemptedAt: new Date().toISOString(),
         deepLinkParams,
         recipientTargeting: targeting,
         lastError,
+        ...(extraAfter ?? {}),
       },
       success: true,
       reasonCode: 'wecom_fallback_in_app_todo',
@@ -270,7 +382,7 @@ export class NotificationsService implements OnApplicationShutdown {
   /** 指数退避；允许 baseMs 在运行期被测试替身注入为 0 以加速（生产端 getBaseBackoffMs 已 clamp ≥10ms） */
   private computeBackoff(attempt: number, baseMs: number): number {
     if (baseMs <= 0) return 0
-    return baseMs * Math.pow(2, attempt - 1)
+    return Math.min(baseMs * Math.pow(2, attempt - 1), 5_000)
   }
 
   private delay(ms: number): Promise<void> {

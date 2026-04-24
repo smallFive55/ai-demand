@@ -67,6 +67,12 @@ describe('RequirementsService', () => {
       attempts: 1,
       fallbackTriggered: false,
     }),
+    // Story 2.4：接待成功通知 mock（默认成功）
+    notifyRequirementReceived: jest.fn().mockResolvedValue({
+      success: true,
+      attempts: 1,
+      fallbackTriggered: false,
+    }),
     track: jest.fn(<T,>(p: Promise<T>): Promise<T> => p),
   }
 
@@ -316,8 +322,9 @@ describe('RequirementsService', () => {
 
     await service.appendMessage(reqId, '完整描述', actor, 'r2')
 
+    // Story 2.4：applyCollectingToReceived 现在走条件 UPDATE (`WHERE status='collecting'`)。
     expect(mockReqRepo.update).toHaveBeenCalledWith(
-      reqId,
+      expect.objectContaining({ id: reqId, status: 'collecting' }),
       expect.objectContaining({ status: 'received', deliveryManagerId: 'dm-x' }),
     )
   })
@@ -518,8 +525,9 @@ describe('RequirementsService', () => {
       const out = await service.patchIntake(reqId, buId, actor, 'r3')
 
       expect(out.status).toBe('received')
+      // Story 2.4：applyCollectingToReceived 现在走条件 UPDATE (`WHERE status='collecting'`)。
       expect(mockReqRepo.update).toHaveBeenCalledWith(
-        reqId,
+        expect.objectContaining({ id: reqId, status: 'collecting' }),
         expect.objectContaining({ status: 'received', deliveryManagerId: 'dm-x' }),
       )
     })
@@ -689,6 +697,240 @@ describe('RequirementsService', () => {
       await expect(service.appendMessage(reqId, 'test message', actor, 'req-999')).rejects.toThrow(
         expect.objectContaining({
           message: expect.stringContaining('该需求已放弃'),
+        }),
+      )
+    })
+  })
+
+  // ========= Story 2.4：接待成功通知调度 =========
+  describe('applyCollectingToReceived notification dispatch (Story 2.4)', () => {
+    const flushMicrotasks = async () => {
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+
+    const sampleEnabledBu = (id: string, threshold = 80) => ({
+      id,
+      name: '测试板块',
+      description: '',
+      functionList: [] as string[],
+      deliveryManagerId: 'dm-x',
+      admissionCriteria: '标准',
+      admissionThreshold: threshold,
+      status: 'enabled' as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+
+    const completeSnapshot = (requirementId: string) => ({
+      id: 'snap-1',
+      requirementId,
+      version: 1,
+      collectedFields: {
+        goalBackground: 'a',
+        coreScope: 'b',
+        successCriteria: 'c',
+      },
+    })
+
+    const businessActor = { id: 'biz-b', role: 'business' as const }
+
+    it('triggers notifyRequirementReceived exactly once for llm_intake path (AC1, AC3)', async () => {
+      const reqId = 'req-llm-1'
+      mockReqRepo.findOne.mockResolvedValue(
+        reqEntity({ id: reqId, submitterId: businessActor.id, status: 'collecting', title: '自动化' }),
+      )
+      mockMsgRepo.save.mockImplementation(async (m: RequirementMessageEntity) => ({
+        ...m,
+        id: `msg-${m.role}`,
+        createdAt: m.createdAt,
+      }))
+      mockMsgRepo.find.mockResolvedValue([
+        { id: '1', requirementId: reqId, role: 'user', content: 'desc', createdAt: new Date() },
+      ])
+      mockLlm.complete.mockResolvedValue({
+        assistantText: 'ok',
+        collectedFieldsPatch: { goalBackground: 'a', coreScope: 'b', successCriteria: 'c' },
+        intakeSuggestion: {
+          suggestedBusinessUnitId: 'bu-1',
+          projectIds: [],
+          admissionScore: 92,
+          admissionRationale: '匹配',
+        },
+      })
+      mockSnapRepo.findOne.mockResolvedValue(null)
+      mockReqRepo.update.mockResolvedValue({ affected: 1 })
+      mockBu.listEnabled.mockResolvedValue([sampleEnabledBu('bu-1', 80)])
+
+      await service.appendMessage(reqId, 'desc', businessActor, 'req-llm')
+      await flushMicrotasks()
+
+      expect(mockNotifications.notifyRequirementReceived).toHaveBeenCalledTimes(1)
+      expect(mockNotifications.notifyRequirementReceived).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requirementId: reqId,
+          requirementTitle: '自动化',
+          submitterId: businessActor.id,
+          businessUnitName: '测试板块',
+          admissionScore: 92,
+          admissionThreshold: 80,
+          source: 'llm_intake',
+          recipientId: 'dm-x',
+          actor: businessActor.id,
+          requestId: 'req-llm',
+          mentionedWecomUserIds: [],
+        }),
+      )
+    })
+
+    it('triggers notifyRequirementReceived exactly once for manual_patch path (AC1)', async () => {
+      const reqId = 'req-manual-1'
+      let findCount = 0
+      mockReqRepo.findOne.mockImplementation(async () => {
+        findCount++
+        if (findCount === 1) {
+          return reqEntity({ id: reqId, submitterId: businessActor.id, status: 'collecting', title: '手动触发' })
+        }
+        return reqEntity({
+          id: reqId,
+          submitterId: businessActor.id,
+          status: 'received',
+          businessUnitId: 'bu-1',
+          admissionScore: 85,
+          admissionRationale: '通过',
+          deliveryManagerId: 'dm-x',
+        })
+      })
+      mockBu.listEnabled.mockResolvedValue([sampleEnabledBu('bu-1', 70)])
+      mockSnapRepo.findOne.mockResolvedValue(completeSnapshot(reqId))
+      mockLlm.scoreIntake.mockResolvedValue({ score: 85, rationale: '通过' })
+      mockReqRepo.update.mockResolvedValue({ affected: 1 })
+
+      await service.patchIntake(reqId, 'bu-1', businessActor, 'req-manual')
+      await flushMicrotasks()
+
+      expect(mockNotifications.notifyRequirementReceived).toHaveBeenCalledTimes(1)
+      const arg = mockNotifications.notifyRequirementReceived.mock.calls[0][0]
+      expect(arg.source).toBe('manual_patch')
+      expect(arg.admissionScore).toBe(85)
+      expect(arg.admissionThreshold).toBe(70)
+      expect(arg.recipientId).toBe('dm-x')
+      expect(arg.businessUnitName).toBe('测试板块')
+    })
+
+    it('does NOT notify when concurrent UPDATE misses (received_concurrent_no_op) (AC5)', async () => {
+      const reqId = 'req-concurrent'
+      let findCount = 0
+      mockReqRepo.findOne.mockImplementation(async () => {
+        findCount++
+        if (findCount === 1) {
+          return reqEntity({ id: reqId, submitterId: businessActor.id, status: 'collecting' })
+        }
+        // 二次读取（getById）返回已被并发迁移的状态
+        return reqEntity({
+          id: reqId,
+          submitterId: businessActor.id,
+          status: 'received',
+          businessUnitId: 'bu-1',
+          admissionScore: 90,
+          admissionRationale: '通过',
+          deliveryManagerId: 'dm-x',
+        })
+      })
+      mockBu.listEnabled.mockResolvedValue([sampleEnabledBu('bu-1', 80)])
+      mockSnapRepo.findOne.mockResolvedValue(completeSnapshot(reqId))
+      mockLlm.scoreIntake.mockResolvedValue({ score: 90, rationale: '通过' })
+      // patchIntake 先调用 this.reqRepo.update(id, {...}) 更新打分字段（非条件 UPDATE，affected=1）；
+      // 然后在 applyCollectingToReceived 内部的条件 UPDATE 返回 affected=0 模拟并发。
+      mockReqRepo.update
+        .mockResolvedValueOnce({ affected: 1 }) // 打分字段更新
+        .mockResolvedValueOnce({ affected: 0 }) // 条件 UPDATE 未命中（并发）
+
+      await service.patchIntake(reqId, 'bu-1', businessActor, 'req-race')
+      await flushMicrotasks()
+
+      expect(mockNotifications.notifyRequirementReceived).not.toHaveBeenCalled()
+      expect(mockAudit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'requirement_status_change',
+          success: false,
+          reasonCode: 'received_concurrent_no_op',
+        }),
+      )
+    })
+
+    it('does not await notifications in main flow: HTTP response returns before notify settles (AC8 async decoupling)', async () => {
+      const reqId = 'req-async'
+      let findCount = 0
+      mockReqRepo.findOne.mockImplementation(async () => {
+        findCount++
+        if (findCount === 1) {
+          return reqEntity({ id: reqId, submitterId: businessActor.id, status: 'collecting', title: '异步' })
+        }
+        return reqEntity({
+          id: reqId,
+          submitterId: businessActor.id,
+          status: 'received',
+          businessUnitId: 'bu-1',
+          admissionScore: 90,
+          admissionRationale: '通过',
+          deliveryManagerId: 'dm-x',
+        })
+      })
+      mockBu.listEnabled.mockResolvedValue([sampleEnabledBu('bu-1', 80)])
+      mockSnapRepo.findOne.mockResolvedValue(completeSnapshot(reqId))
+      mockLlm.scoreIntake.mockResolvedValue({ score: 90, rationale: '通过' })
+      mockReqRepo.update.mockResolvedValue({ affected: 1 })
+
+      // 通知挂起 10s 不 resolve —— 主流程必须在该 Promise 之前返回
+      let resolveNotify!: () => void
+      mockNotifications.notifyRequirementReceived.mockReturnValueOnce(
+        new Promise<void>((r) => {
+          resolveNotify = r
+        }),
+      )
+
+      const start = Date.now()
+      const result = await service.patchIntake(reqId, 'bu-1', businessActor, 'req-async')
+      const elapsed = Date.now() - start
+
+      expect(result.status).toBe('received')
+      expect(elapsed).toBeLessThan(500)
+      resolveNotify()
+    })
+
+    it('records notification_orchestrator_unexpected audit when notifyRequirementReceived throws', async () => {
+      const reqId = 'req-orc'
+      let findCount = 0
+      mockReqRepo.findOne.mockImplementation(async () => {
+        findCount++
+        if (findCount === 1) {
+          return reqEntity({ id: reqId, submitterId: businessActor.id, status: 'collecting' })
+        }
+        return reqEntity({
+          id: reqId,
+          submitterId: businessActor.id,
+          status: 'received',
+          businessUnitId: 'bu-1',
+          admissionScore: 88,
+          admissionRationale: '通过',
+          deliveryManagerId: 'dm-x',
+        })
+      })
+      mockBu.listEnabled.mockResolvedValue([sampleEnabledBu('bu-1', 80)])
+      mockSnapRepo.findOne.mockResolvedValue(completeSnapshot(reqId))
+      mockLlm.scoreIntake.mockResolvedValue({ score: 88, rationale: '通过' })
+      mockReqRepo.update.mockResolvedValue({ affected: 1 })
+      mockNotifications.notifyRequirementReceived.mockRejectedValueOnce(new Error('orchestrator down'))
+
+      const result = await service.patchIntake(reqId, 'bu-1', businessActor, 'req-orc')
+      await flushMicrotasks()
+
+      expect(result.status).toBe('received')
+      expect(mockAudit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'requirement_received',
+          success: false,
+          reasonCode: 'notification_orchestrator_unexpected',
         }),
       )
     })

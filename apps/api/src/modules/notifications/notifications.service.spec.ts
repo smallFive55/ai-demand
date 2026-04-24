@@ -9,7 +9,10 @@ describe('NotificationsService', () => {
   let moduleRef: TestingModule
 
   const mockAudit = { record: jest.fn().mockResolvedValue(undefined) }
-  const mockWecom = { sendRequirementAbandoned: jest.fn() }
+  const mockWecom = {
+    sendRequirementAbandoned: jest.fn(),
+    sendRequirementReceived: jest.fn(),
+  }
 
   const baseInput = {
     requirementId: 'req-1',
@@ -270,5 +273,200 @@ describe('NotificationsService', () => {
 
     // 应在 grace (30ms) 前后返回，不应被悬挂
     expect(elapsed).toBeLessThan(1_000)
+  })
+
+  // ========= Story 2.4：接待成功通知 =========
+  describe('notifyRequirementReceived (Story 2.4)', () => {
+    const receivedInput = {
+      requirementId: 'req-R-1',
+      requirementTitle: '营销活动自动化平台',
+      submitterId: 'biz-b',
+      businessUnitName: '数字营销',
+      admissionScore: 88,
+      admissionThreshold: 80,
+      source: 'llm_intake' as const,
+      recipientId: 'dm-marketing',
+      actor: 'biz-b',
+      requestId: 'r-R-1',
+      occurredAt: '2026-04-21T09:00:00.000Z',
+    }
+
+    it('sends notification successfully and records audit with step=review deep link contract (AC1, AC3)', async () => {
+      mockWecom.sendRequirementReceived.mockResolvedValueOnce({ externalMessageId: 'wx-R' })
+
+      const result = await service.notifyRequirementReceived(receivedInput)
+
+      expect(result.success).toBe(true)
+      expect(result.attempts).toBe(1)
+      expect(result.fallbackTriggered).toBe(false)
+      expect(result.externalMessageId).toBe('wx-R')
+
+      const payload = mockWecom.sendRequirementReceived.mock.calls[0][0]
+      expect(payload.eventName).toBe(NOTIFICATION_EVENTS.REQUIREMENT_RECEIVED)
+      expect(payload.deepLinkParams.requirementId).toBe('req-R-1')
+      expect(payload.deepLinkParams.step).toBe('review')
+      expect(payload.deepLinkParams.source).toBe('wecom')
+      expect(typeof payload.deepLinkParams.actionId).toBe('string')
+      expect(payload.deepLinkParams.actionId.length).toBeGreaterThan(0)
+      expect(payload.source).toBe('llm_intake')
+      expect(payload.businessUnitName).toBe('数字营销')
+      expect(payload.admissionScore).toBe(88)
+      expect(payload.admissionThreshold).toBe(80)
+      expect(payload.submitterId).toBe('biz-b')
+
+      expect(mockAudit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'requirement_received',
+          success: true,
+          target: 'req-R-1',
+          after: expect.objectContaining({
+            channel: 'wecom',
+            attempt: 1,
+            eventName: NOTIFICATION_EVENTS.REQUIREMENT_RECEIVED,
+            source: 'llm_intake',
+            admissionScore: 88,
+            admissionThreshold: 80,
+          }),
+        }),
+      )
+    })
+
+    it('writes dispatch_started audit BEFORE first transport attempt (outbox)', async () => {
+      mockWecom.sendRequirementReceived.mockResolvedValueOnce({ externalMessageId: 'wx-R' })
+
+      await service.notifyRequirementReceived(receivedInput)
+
+      const firstAuditCall = mockAudit.record.mock.calls[0][0]
+      expect(firstAuditCall.action).toBe('requirement_received')
+      expect(firstAuditCall.reasonCode).toBe('notification_dispatch_started')
+      expect(firstAuditCall.after).toEqual(
+        expect.objectContaining({
+          phase: 'dispatch_started',
+          channel: 'wecom',
+          recipientTargeting: 'group_broadcast',
+          mentionedCount: 0,
+          source: 'llm_intake',
+        }),
+      )
+      const firstSendOrder = mockWecom.sendRequirementReceived.mock.invocationCallOrder[0]
+      const firstAuditOrder = mockAudit.record.mock.invocationCallOrder[0]
+      expect(firstAuditOrder).toBeLessThan(firstSendOrder)
+    })
+
+    it('marks recipientTargeting=user_mentioned when mentionedWecomUserIds provided', async () => {
+      mockWecom.sendRequirementReceived.mockResolvedValueOnce({ externalMessageId: 'wx-R' })
+
+      await service.notifyRequirementReceived({
+        ...receivedInput,
+        mentionedWecomUserIds: ['wx-dm-1'],
+      })
+
+      const payload = mockWecom.sendRequirementReceived.mock.calls[0][0]
+      expect(payload.mentionedWecomUserIds).toEqual(['wx-dm-1'])
+      const successAudit = mockAudit.record.mock.calls.find(
+        ([e]) => e.success === true && e.after?.attempt === 1,
+      )
+      expect(successAudit?.[0].after).toEqual(
+        expect.objectContaining({ recipientTargeting: 'user_mentioned' }),
+      )
+    })
+
+    it('retries on transient failure and succeeds within max attempts (AC4)', async () => {
+      mockWecom.sendRequirementReceived
+        .mockRejectedValueOnce(new Error('wecom http 502'))
+        .mockResolvedValueOnce({ externalMessageId: 'wx-retry-ok' })
+
+      const result = await service.notifyRequirementReceived(receivedInput)
+
+      expect(result.success).toBe(true)
+      expect(result.attempts).toBe(2)
+      expect(result.fallbackTriggered).toBe(false)
+
+      const failAudit = mockAudit.record.mock.calls.find(
+        ([e]) => e.success === false && e.reasonCode === 'wecom_dispatch_failed',
+      )
+      expect(failAudit).toBeDefined()
+      expect(failAudit?.[0].after).toEqual(
+        expect.objectContaining({
+          eventName: NOTIFICATION_EVENTS.REQUIREMENT_RECEIVED,
+          source: 'llm_intake',
+        }),
+      )
+    })
+
+    it('falls back to in-app todo after max attempts exhausted (AC4)', async () => {
+      mockWecom.sendRequirementReceived.mockRejectedValue(new Error('wecom errcode=45009'))
+
+      const result = await service.notifyRequirementReceived(receivedInput)
+
+      expect(result.success).toBe(false)
+      expect(result.attempts).toBe(3)
+      expect(result.fallbackTriggered).toBe(true)
+      expect(result.lastError).toContain('45009')
+      expect(mockWecom.sendRequirementReceived).toHaveBeenCalledTimes(3)
+
+      const fallbackAudit = mockAudit.record.mock.calls.find(
+        ([e]) => e.reasonCode === 'wecom_fallback_in_app_todo',
+      )
+      expect(fallbackAudit).toBeDefined()
+      expect(fallbackAudit?.[0].after).toEqual(
+        expect.objectContaining({
+          channel: 'in-app-todo',
+          fallback: true,
+          deepLinkParams: expect.objectContaining({
+            requirementId: 'req-R-1',
+            step: 'review',
+          }),
+          source: 'llm_intake',
+        }),
+      )
+    })
+
+    it('honors NOTIFICATION_MAX_ATTEMPTS override and stops early when capped to 1', async () => {
+      process.env.NOTIFICATION_MAX_ATTEMPTS = '1'
+      mockWecom.sendRequirementReceived.mockRejectedValue(new Error('boom'))
+
+      const result = await service.notifyRequirementReceived(receivedInput)
+
+      expect(result.attempts).toBe(1)
+      expect(result.fallbackTriggered).toBe(true)
+      expect(mockWecom.sendRequirementReceived).toHaveBeenCalledTimes(1)
+    })
+
+    it('redacts WECOM webhook URL leaking via error messages into audit', async () => {
+      mockWecom.sendRequirementReceived.mockRejectedValueOnce(
+        new Error(
+          'wecom http 401 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=RECEIVED-SECRET-XYZ',
+        ),
+      )
+      mockWecom.sendRequirementReceived.mockResolvedValueOnce({ externalMessageId: 'wx-R-retry' })
+
+      await service.notifyRequirementReceived(receivedInput)
+
+      const failureAudit = mockAudit.record.mock.calls.find(
+        ([e]) => e.success === false && e.reasonCode === 'wecom_dispatch_failed',
+      )
+      const errMsg = failureAudit?.[0].after?.error as string
+      expect(errMsg).toBeDefined()
+      expect(errMsg).not.toContain('RECEIVED-SECRET-XYZ')
+      expect(errMsg).toContain('<redacted>')
+    })
+
+    it('passes source=manual_patch through when business user corrects unit manually', async () => {
+      mockWecom.sendRequirementReceived.mockResolvedValueOnce({ externalMessageId: 'wx-M' })
+
+      await service.notifyRequirementReceived({
+        ...receivedInput,
+        source: 'manual_patch',
+      })
+
+      const payload = mockWecom.sendRequirementReceived.mock.calls[0][0]
+      expect(payload.source).toBe('manual_patch')
+
+      const dispatchStartedAudit = mockAudit.record.mock.calls[0][0]
+      expect(dispatchStartedAudit.after).toEqual(
+        expect.objectContaining({ source: 'manual_patch' }),
+      )
+    })
   })
 })

@@ -59,6 +59,40 @@ describe('RequirementsController', () => {
     expect(mockService.patchIntake).toHaveBeenCalledWith('rid-1', 'bu-9', req.actor, 'hdr-p')
   })
 
+  it('keeps PATCH /:id/intake response decoupled from async notification orchestration (<500ms)', async () => {
+    mockService.patchIntake.mockImplementation(async () => {
+      void new Promise((resolve) => setTimeout(resolve, 10_000))
+      return { id: 'rid-async', status: 'received' }
+    })
+    const req = { actor: { id: 'biz-1', role: 'business' } } as RequestWithActor
+    const start = Date.now()
+    await expect(
+      controller.patchIntake('rid-async', { businessUnitId: 'bu-9' }, req, 'hdr-p-async'),
+    ).resolves.toEqual({ id: 'rid-async', status: 'received' })
+    expect(Date.now() - start).toBeLessThan(500)
+  })
+
+  it('keeps POST /:id/messages response decoupled from async notification orchestration (<500ms)', async () => {
+    mockService.appendMessage.mockImplementation(async () => {
+      void new Promise((resolve) => setTimeout(resolve, 10_000))
+      return {
+        userMessage: { id: 'u1' },
+        aiMessage: { id: 'a1' },
+        collectedFields: {},
+      }
+    })
+    const req = { actor: { id: 'biz-1', role: 'business' } } as RequestWithActor
+    const start = Date.now()
+    await expect(
+      controller.appendMessage('rid-msg', { content: 'hello' }, req, 'hdr-msg-async'),
+    ).resolves.toEqual({
+      userMessage: { id: 'u1' },
+      aiMessage: { id: 'a1' },
+      collectedFields: {},
+    })
+    expect(Date.now() - start).toBeLessThan(500)
+  })
+
   describe('abandon (Story 2.3)', () => {
     const req = {
       actor: { id: 'biz-1', role: 'business' as const },

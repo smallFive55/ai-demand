@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common'
 import type { WecomNotifierPort } from './wecom-notifier.port'
-import type { WecomRequirementAbandonedPayload } from './notifications.types'
+import type {
+  WecomRequirementAbandonedPayload,
+  WecomRequirementReceivedPayload,
+} from './notifications.types'
 
 /**
  * 未配置企业微信 Webhook / Corp 参数时使用的降级桩。
@@ -16,6 +19,15 @@ export class NoopWecomNotifierService implements WecomNotifierPort {
   ): Promise<{ externalMessageId?: string }> {
     this.logger.debug(
       `[noop wecom] event=${payload.eventName} requirement=${payload.requirementId} recipient=${payload.recipientId}`,
+    )
+    return {}
+  }
+
+  async sendRequirementReceived(
+    payload: WecomRequirementReceivedPayload,
+  ): Promise<{ externalMessageId?: string }> {
+    this.logger.debug(
+      `[noop wecom] event=${payload.eventName} requirement=${payload.requirementId} recipient=${payload.recipientId} source=${payload.source}`,
     )
     return {}
   }

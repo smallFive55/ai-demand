@@ -1,10 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common'
 import type { WecomNotifierPort } from './wecom-notifier.port'
-import type { WecomRequirementAbandonedPayload } from './notifications.types'
-import { redactWebhookUrl } from './url-redact'
+import type {
+  RequirementDeepLinkParams,
+  WecomRequirementAbandonedPayload,
+  WecomRequirementReceivedPayload,
+} from './notifications.types'
+import { normalizeMentions, redactWebhookUrl } from './url-redact'
 
 /**
- * 企业微信群机器人 / 自建应用消息发送器（Story 2.3 Task 3）。
+ * 企业微信群机器人 / 自建应用消息发送器（Story 2.3 Task 3 建立，Story 2.4 扩展）。
  *
  * 启用条件：
  *  - WECOM_WEBHOOK_URL 被设置 → 走 Webhook 机器人模式（最简单，适合内测）
@@ -76,17 +80,38 @@ export class HttpWecomNotifierService implements WecomNotifierPort {
   }
 
   /**
-   * 放弃通知深链路径（HIGH-1）。
+   * 放弃通知深链路径（HIGH-1，Story 2.3）。
    *
    * 架构约束（`architecture.md:104`）："通知服务统一生成深链 `/{role}/approvals?requirementId=<id>&step=<stage>&actionId=<id>&source=wecom`"。
-   * 放弃事件面向业务方（role=business），默认路径 `/business/approvals`；前端路由（`router/index.ts`）
-   * 已为该路径注册指向 `RequirementChatView` 的别名/重定向。
+   * 放弃事件面向业务方（role=business），默认路径 `/business/approvals`。
    * 运维层面若需指向其他前端路由（如历史版本 `/requirement/new`）可通过
    * `NOTIFICATION_ABANDON_DEEP_LINK_PATH` 覆写。
    */
   private getAbandonDeepLinkPath(): string {
-    const raw = process.env.NOTIFICATION_ABANDON_DEEP_LINK_PATH?.trim()
-    if (!raw) return '/business/approvals'
+    return this.resolveDeepLinkPath(
+      'NOTIFICATION_ABANDON_DEEP_LINK_PATH',
+      '/business/approvals',
+    )
+  }
+
+  /**
+   * 接待成功通知深链路径（Story 2.4）。
+   *
+   * 面向交付经理（role=delivery-manager），默认路径 `/delivery-manager/approvals`；
+   * 架构契约同 abandon 路径：`/{role}/approvals?requirementId=&step=review&actionId=&source=wecom`。
+   * 运维层面允许通过 `NOTIFICATION_RECEIVED_DEEP_LINK_PATH` 覆写。
+   */
+  private getReceivedDeepLinkPath(): string {
+    return this.resolveDeepLinkPath(
+      'NOTIFICATION_RECEIVED_DEEP_LINK_PATH',
+      '/delivery-manager/approvals',
+    )
+  }
+
+  /** 归一化相对路径：env 空值→default；非 `/` 前导→补一个 */
+  private resolveDeepLinkPath(envVar: string, defaultPath: string): string {
+    const raw = process.env[envVar]?.trim()
+    if (!raw) return defaultPath
     if (!raw.startsWith('/')) return `/${raw}`
     return raw
   }
@@ -102,8 +127,8 @@ export class HttpWecomNotifierService implements WecomNotifierPort {
     payload: WecomRequirementAbandonedPayload,
   ): Promise<{ externalMessageId?: string }> {
     const url = this.getWebhookUrl()
+    const deepLink = this.buildDeepLink(this.getAbandonDeepLinkPath(), payload.deepLinkParams)
 
-    const deepLink = this.buildDeepLink(payload)
     const lines: string[] = [
       `【需求已放弃】${payload.requirementTitle}`,
       `放弃原因：${payload.reason}`,
@@ -111,17 +136,53 @@ export class HttpWecomNotifierService implements WecomNotifierPort {
       `查看详情：${deepLink}`,
     ]
 
-    const mentioned = (payload.mentionedWecomUserIds ?? []).filter(
-      (s): s is string => typeof s === 'string' && s.trim().length > 0,
-    )
-    // HIGH-3：若有 mentioned_list 则前置声明通知对象，让群聊中的被提及者更直观看到
+    const mentioned = normalizeMentions(payload.mentionedWecomUserIds)
     if (mentioned.length > 0) {
       lines.splice(1, 0, `通知对象：${mentioned.map((u) => `@${u}`).join(' ')}`)
     }
 
-    const textBody: { content: string; mentioned_list?: string[] } = {
-      content: lines.join('\n'),
+    return this.postTextMessage(url, lines.join('\n'), mentioned)
+  }
+
+  /**
+   * Story 2.4：接待成功通知。
+   *
+   * 文案字段（AC3）：需求标题 / 需求编号 / 提交者 / 拟归属板块名 / 匹配度 / 放行来源 / 查看详情深链。
+   */
+  async sendRequirementReceived(
+    payload: WecomRequirementReceivedPayload,
+  ): Promise<{ externalMessageId?: string }> {
+    const url = this.getWebhookUrl()
+    const deepLink = this.buildDeepLink(this.getReceivedDeepLinkPath(), payload.deepLinkParams)
+
+    const sourceLabel =
+      payload.source === 'llm_intake' ? 'AI 自动评估' : '业务方手动修正板块'
+    const lines: string[] = [
+      `【需求已接待】${payload.requirementTitle}`,
+      `需求编号：${payload.requirementId}`,
+      `提交者：${payload.submitterId}`,
+      `拟归属板块：${payload.businessUnitName}`,
+      `匹配度：${payload.admissionScore}（阈值 ${payload.admissionThreshold}，已达标）`,
+      `放行来源：${sourceLabel}`,
+      `发生时间：${payload.occurredAt}`,
+      `查看详情：${deepLink}`,
+    ]
+
+    const mentioned = normalizeMentions(payload.mentionedWecomUserIds)
+    if (mentioned.length > 0) {
+      lines.splice(1, 0, `通知对象：${mentioned.map((u) => `@${u}`).join(' ')}`)
     }
+
+    return this.postTextMessage(url, lines.join('\n'), mentioned)
+  }
+
+  /** 共用：POST 文本消息并处理 status / errcode；复用原 abandon 实现骨架避免重复逻辑漂移 */
+  private async postTextMessage(
+    url: string,
+    content: string,
+    mentioned: string[],
+  ): Promise<{ externalMessageId?: string }> {
+    const textBody: { content: string; mentioned_list?: string[] } = { content }
     if (mentioned.length > 0) {
       textBody.mentioned_list = mentioned
     }
@@ -153,16 +214,16 @@ export class HttpWecomNotifierService implements WecomNotifierPort {
     }
   }
 
-  private buildDeepLink(payload: WecomRequirementAbandonedPayload): string {
+  /** 共用深链拼装：base + path + ?requirementId=&step=&actionId=&source=  */
+  private buildDeepLink(path: string, params: RequirementDeepLinkParams): string {
     const base = this.requireAppWebBaseUrl()
-    const { requirementId, step, actionId, source } = payload.deepLinkParams
+    const { requirementId, step, actionId, source } = params
     const qs = new URLSearchParams({
       requirementId,
       step,
       actionId,
       ...(source ? { source } : {}),
     }).toString()
-    const path = this.getAbandonDeepLinkPath()
     return `${base.replace(/\/$/, '')}${path}?${qs}`
   }
 }

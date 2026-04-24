@@ -2,6 +2,7 @@ import { HttpWecomNotifierService } from './http-wecom-notifier.service'
 import {
   NOTIFICATION_EVENTS,
   type WecomRequirementAbandonedPayload,
+  type WecomRequirementReceivedPayload,
 } from './notifications.types'
 
 describe('HttpWecomNotifierService (Story 2.3 code-review round-3)', () => {
@@ -27,6 +28,7 @@ describe('HttpWecomNotifierService (Story 2.3 code-review round-3)', () => {
     process.env.APP_PUBLIC_URL = 'https://app.example.com'
     delete process.env.APP_WEB_BASE_URL
     delete process.env.NOTIFICATION_ABANDON_DEEP_LINK_PATH
+    delete process.env.NOTIFICATION_RECEIVED_DEEP_LINK_PATH
     mockFetchOk.mockReset()
     mockFetchOk.mockResolvedValue(
       new Response(JSON.stringify({ errcode: 0, msgid: 'wx-1' }), { status: 200 }),
@@ -168,5 +170,141 @@ describe('HttpWecomNotifierService (Story 2.3 code-review round-3)', () => {
       }),
     )
     await expect(service.sendRequirementAbandoned(samplePayload())).rejects.toThrow(/45009/)
+  })
+
+  // ========== Story 2.4：sendRequirementReceived ==========
+  describe('sendRequirementReceived (Story 2.4)', () => {
+    const sampleReceived = (
+      over: Partial<WecomRequirementReceivedPayload> = {},
+    ): WecomRequirementReceivedPayload => ({
+      eventName: NOTIFICATION_EVENTS.REQUIREMENT_RECEIVED,
+      recipientId: 'dm-1',
+      requirementId: 'req-R-1',
+      requirementTitle: '营销活动自动化平台',
+      submitterId: 'biz-b',
+      businessUnitName: '数字营销',
+      admissionScore: 90,
+      admissionThreshold: 80,
+      source: 'llm_intake',
+      occurredAt: '2026-04-21T09:00:00.000Z',
+      deepLinkParams: {
+        requirementId: 'req-R-1',
+        step: 'review',
+        actionId: 'act-R-1',
+        source: 'wecom',
+      },
+      ...over,
+    })
+
+    it('builds deep link on /delivery-manager/approvals by default (AC3 architecture contract)', async () => {
+      await service.sendRequirementReceived(sampleReceived())
+      const body = parseLastFetchBody()
+      expect(body.text.content).toContain(
+        'https://app.example.com/delivery-manager/approvals?requirementId=req-R-1',
+      )
+      expect(body.text.content).toContain('step=review')
+      expect(body.text.content).toContain('actionId=act-R-1')
+      expect(body.text.content).toContain('source=wecom')
+    })
+
+    it('NOTIFICATION_RECEIVED_DEEP_LINK_PATH overrides default path', async () => {
+      process.env.NOTIFICATION_RECEIVED_DEEP_LINK_PATH = '/legacy/dm/approvals'
+      await service.sendRequirementReceived(sampleReceived())
+      const body = parseLastFetchBody()
+      expect(body.text.content).toContain(
+        'https://app.example.com/legacy/dm/approvals?requirementId=req-R-1',
+      )
+    })
+
+    it('env without leading slash is normalized', async () => {
+      process.env.NOTIFICATION_RECEIVED_DEEP_LINK_PATH = 'custom/dm/path'
+      await service.sendRequirementReceived(sampleReceived())
+      const body = parseLastFetchBody()
+      expect(body.text.content).toContain('https://app.example.com/custom/dm/path?')
+    })
+
+    it('prefers APP_PUBLIC_URL over APP_WEB_BASE_URL for received deep link', async () => {
+      process.env.APP_PUBLIC_URL = 'https://public.example.com'
+      process.env.APP_WEB_BASE_URL = 'https://legacy.example.com'
+      await service.sendRequirementReceived(sampleReceived())
+      const body = parseLastFetchBody()
+      expect(body.text.content).toContain(
+        'https://public.example.com/delivery-manager/approvals',
+      )
+      expect(body.text.content).not.toContain('legacy.example.com')
+    })
+
+    it('throws when neither APP_PUBLIC_URL nor APP_WEB_BASE_URL configured', async () => {
+      delete process.env.APP_PUBLIC_URL
+      delete process.env.APP_WEB_BASE_URL
+      await expect(service.sendRequirementReceived(sampleReceived())).rejects.toThrow(
+        /APP_PUBLIC_URL 未配置/,
+      )
+    })
+
+    it('non-HTTPS WECOM_WEBHOOK_URL throws redacted error (no ?key= leak)', async () => {
+      process.env.WECOM_WEBHOOK_URL =
+        'http://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=SECRET-R'
+      let caught: Error | undefined
+      try {
+        await service.sendRequirementReceived(sampleReceived())
+      } catch (e) {
+        caught = e as Error
+      }
+      expect(caught).toBeDefined()
+      expect(caught!.message).toContain('必须使用 https 协议')
+      expect(caught!.message).not.toContain('SECRET-R')
+    })
+
+    it('injects mentioned_list when mentionedWecomUserIds provided', async () => {
+      await service.sendRequirementReceived(
+        sampleReceived({ mentionedWecomUserIds: ['wx-dm-A', 'wx-dm-B'] }),
+      )
+      const body = parseLastFetchBody()
+      expect(body.text.mentioned_list).toEqual(['wx-dm-A', 'wx-dm-B'])
+      expect(body.text.content).toContain('通知对象：@wx-dm-A @wx-dm-B')
+    })
+
+    it('omits mentioned_list when list is empty', async () => {
+      await service.sendRequirementReceived(sampleReceived({ mentionedWecomUserIds: [] }))
+      const body = parseLastFetchBody()
+      expect(body.text.mentioned_list).toBeUndefined()
+      expect(body.text.content).not.toContain('通知对象：')
+    })
+
+    it('renders required fields in text body (AC3)', async () => {
+      await service.sendRequirementReceived(sampleReceived())
+      const body = parseLastFetchBody()
+      const content = body.text.content
+      // 标题、编号、提交者、板块名、匹配度、放行来源均应命中
+      expect(content).toContain('【需求已接待】营销活动自动化平台')
+      expect(content).toContain('需求编号：req-R-1')
+      expect(content).toContain('提交者：biz-b')
+      expect(content).toContain('拟归属板块：数字营销')
+      expect(content).toContain('匹配度：90（阈值 80，已达标）')
+      expect(content).toContain('放行来源：AI 自动评估')
+    })
+
+    it('labels manual_patch source in text body', async () => {
+      await service.sendRequirementReceived(sampleReceived({ source: 'manual_patch' }))
+      const body = parseLastFetchBody()
+      expect(body.text.content).toContain('放行来源：业务方手动修正板块')
+    })
+
+    it('surfaces non-2xx as Error', async () => {
+      mockFetchOk.mockResolvedValueOnce(
+        new Response('nope', { status: 502, statusText: 'Bad Gateway' }),
+      )
+      await expect(service.sendRequirementReceived(sampleReceived())).rejects.toThrow(/502/)
+    })
+
+    it('surfaces errcode!=0 as Error', async () => {
+      mockFetchOk.mockResolvedValueOnce(
+        new Response(JSON.stringify({ errcode: 45009, errmsg: 'frequency limit' }), {
+          status: 200,
+        }),
+      )
+      await expect(service.sendRequirementReceived(sampleReceived())).rejects.toThrow(/45009/)
+    })
   })
 })
